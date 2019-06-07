@@ -20,6 +20,9 @@ class AlationInstance():
         self.existing_templates = self.getTemplates() # store existing templates
 
     def login(self, email, password):
+        # -- just in case, grab an API token as well
+        # self.token = requests.post(self.host + '/api/v1/getToken/', files=dict(username = email,
+        #                                                                           password = password))
         URL = self.host + '/login/'
 
         s = requests.Session()
@@ -40,6 +43,7 @@ class AlationInstance():
                    "Cookie": "csrftoken=" + csrftoken + "; sessionid=" + sessionid,
                    "Referer": URL
                    }
+
         return headers
 
     def delete_all_fields(self):
@@ -89,6 +93,12 @@ class AlationInstance():
             except:
                 break
         return articles
+
+    def download_datadict(self):
+        url = self.host + "/data/3/download_dict/table/1750/"
+        params = dict(format='json')
+        r = requests.get(url, headers=self.headers, verify=self.verify, params=params)
+        return r
 
     def getTemplates(self):
         url = self.host + "/integration/v1/custom_template/"
