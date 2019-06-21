@@ -12,6 +12,7 @@ class Article():
     # Flattens the custom templates field
     # Flattens the custom fields -- TODO
     def __init__(self, article): # right now expects a DataFrame - but should also work if an Article is passed
+        self.references = [] # store references to other Alation objects
         # then you can chain commands
         if 'id' in article:
             article.index = article.id
@@ -130,11 +131,36 @@ class Article():
     def head(self):
         print self.article.head()
 
-    def get_references(self):
-        match = self.article.body.apply(lambda x: re.findall(
-            '<a \w+-oid="(\d+)" \w+-otype="(\w+)" href="\/\w+\/\d+\/">([a-zA-Z0-9 \(\)._]+)<\/a>', x, flags=0))
-        r={}
-        for m in match:
+    def get_references_old(self):
+        def find_refs(x):
+            m=re.findall('<a \w+-oid="(\d+)" \w+-otype="(\w+)" href="\/\w+\/\d+\/">([a-zA-Z0-9 \(\)._]+)<\/a>', x, flags=0)
+            r={}
             for n in m:
-                r["{}/{}".format(n[1], n[0])] = n[2]
-        return r
+                r["{}/{}".format(n[1], n[0])] = n[2] # a key-value pair, e.g. article/27 = "Interesting Article"
+            return r
+        match = self.article.body.apply(find_refs)
+        return match # return a DataSeries indexed by source article ID, each element a list of references
+
+
+    def get_files(self):
+        match = self.article.body.apply(lambda x: re.findall(
+            '<img class=\"([/a-z -_0-9]*)\" +src=\"([/a-z -_0-9]*)\" +style=\"width: ([/a-z -_0-9]*)\">', x, flags=0))
+        unique_list_files = set()
+        for i, m in match.iteritems():
+            for n in m:
+                relative_url = n[1].replace("https://abok.alationproserv.com", "")
+                #log_me("{}:{}".format(i, relative_url))
+                unique_list_files.add(relative_url)
+        return unique_list_files
+
+    def get_references(self):
+        for i, row in self.article.iterrows():
+            m = re.findall('<a \w+-oid="(\d+)" \w+-otype="(\w+)" href="\/\w+\/\d+\/">([a-zA-Z0-9 \(\)._]+)<\/a>', row.body,
+                           flags=0)
+            r = {}
+            for n in m:
+                url = "{}/{}".format(n[1], n[0])
+                r[url] = n[2]  # a key-value pair, e.g. article/27 = "Interesting Article"
+                self.references.append({i:url})
+                log_me("Found a reference to {} in Article {}({})".format(url, i, row.title))
+        return self.references # return a DataSeries indexed by source article ID, each element a list of references

@@ -317,12 +317,23 @@ class AlationInstance():
         return CustomFields.sort_index()
 
     def getQueries(self, ds_id):
-        url = self.host + "/integration/v1/query/"
+        log_me("Getting queries")
+        url = self.host + "/api/query/"
+        ## curl 'https://abok.alationproserv.com/api/query/?saved=true&discarded=false&author=6&order_by=-ts_updated&limit=20&values=id%2Cotype%2Curl%2Ctitle%2Cdescription%2Cauthor%2Cds%2Cschedules%2Cts_created%2Cts_updated%2Clast_visited%2Clast_updated_at%2Clast_autosaved_at%2Cexecution_tally%2Cnum_favs%2Cstmt_fps%2Cdisplay_content%2Cquery_group_ids%2Ccan_schedule' -H 'cookie: csrftoken=Fd85G5VkrwPhQsdXETREO7RVHOgn1zQt; sessionid=s0788qimb8s1eyjyde1yjiurjydiywdd' -H 'accept-encoding: gzip, deflate, br' -H 'accept-language: en-GB,en-US;q=0.9,en;q=0.8,de;q=0.7' -H 'user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.169 Safari/537.36' -H 'accept: application/json, text/javascript, */*; q=0.01' -H 'referer: https://abok.alationproserv.com/compose/query/98/' -H 'authority: abok.alationproserv.com' -H 'x-requested-with: XMLHttpRequest' --compressed
         params = dict(limit=1000, datasource_id=ds_id)
-        headers = {}
-        headers['token'] = 'cca51dde-0acb-467a-afda-6158549ab382' ## BAD HACK
-        r = requests.get(url, headers=headers, verify=self.verify, params=params)
+        r = requests.get(url, headers=self.headers, verify=self.verify, params=params)
         queries = pd.DataFrame(json.loads(r.content))
         queries.index = queries.id
         return queries.sort_index()
+
+    def getMediaFile(self, media_set, dir='/Users/matthias.funke/Downloads'):
+        for filename in media_set:
+            log_me("Getting file {}".format(filename))
+            url = self.host + filename
+
+            r = requests.get(url, headers=self.headers, verify=self.verify)
+            if r.status_code != 200:
+                raise Exception(r.text)
+            open(dir + filename, 'wb').write(r.content)
+
 
