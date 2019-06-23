@@ -12,7 +12,7 @@ class Article():
     # Flattens the custom templates field
     # Flattens the custom fields -- TODO
     def __init__(self, article): # right now expects a DataFrame - but should also work if an Article is passed
-        self.references = [] # store references to other Alation objects
+        #self.references = [] # store references to other Alation objects
         # then you can chain commands
         if 'id' in article:
             article.index = article.id
@@ -36,6 +36,7 @@ class Article():
             del self.article['custom_fields']
         else:
             self.article = article
+        #self.article['references'] = [] # initialise an empty list
 
 
     # returns all articles with the desired template name (may not work for multiple templates)
@@ -131,14 +132,10 @@ class Article():
     def head(self):
         print self.article.head()
 
-    def get_references_old(self):
-        def find_refs(x):
-            m=re.findall('<a \w+-oid="(\d+)" \w+-otype="(\w+)" href="\/\w+\/\d+\/">([a-zA-Z0-9 \(\)._]+)<\/a>', x, flags=0)
-            r={}
-            for n in m:
-                r["{}/{}".format(n[1], n[0])] = n[2] # a key-value pair, e.g. article/27 = "Interesting Article"
-            return r
-        match = self.article.body.apply(find_refs)
+
+    def get_references(self):
+        match = self.article.body.apply(lambda x: re.findall('<a \w+-oid="(\d+)" \w+-otype="(\w+)" href="\/\w+\/\d+\/">([a-zA-Z0-9 \(\)._:]+)<\/a>', x, flags=0))
+        self.article['references'] = match
         return match # return a DataSeries indexed by source article ID, each element a list of references
 
 
@@ -153,14 +150,9 @@ class Article():
                 unique_list_files.add(relative_url)
         return unique_list_files
 
-    def get_references(self):
-        for i, row in self.article.iterrows():
-            m = re.findall('<a \w+-oid="(\d+)" \w+-otype="(\w+)" href="\/\w+\/\d+\/">([a-zA-Z0-9 \(\)._]+)<\/a>', row.body,
-                           flags=0)
-            r = {}
-            for n in m:
-                url = "{}/{}".format(n[1], n[0])
-                r[url] = n[2]  # a key-value pair, e.g. article/27 = "Interesting Article"
-                self.references.append({i:url})
-                log_me("Found a reference to {} in Article {}({})".format(url, i, row.title))
-        return self.references # return a DataSeries indexed by source article ID, each element a list of references
+
+    def get_article_by_name(self, name):
+        match = self.article[self.article.title==name]
+        if match.shape[0] == 0:
+            log_me("Could not find article with the name '{}'".format(name))
+        return match

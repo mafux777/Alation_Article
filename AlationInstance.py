@@ -93,6 +93,26 @@ class AlationInstance():
             except:
                 break
         return articles
+    def getArticleByID(self, id):
+        url = self.host + "/integration/v1/article/" + str(id) + "/"
+        r = requests.get(url, headers=self.headers, verify=self.verify)
+        # return a dictionary
+        article = json.loads(r.content)
+        return article
+
+    def postArticle(self, article):
+        url = self.host + "/integration/v1/article/"
+        r = requests.post(url, headers=self.headers, verify=self.verify, json=article)
+        # return a dictionary
+        art = json.loads(r.content)
+        return art
+
+    def updateArticle(self, id, article):
+        url = self.host + "/integration/v1/article/" + str(id) + "/"
+        r = requests.put(url, headers=self.headers, verify=self.verify, json=article)
+        # return a dictionary
+        art = json.loads(r.content)
+        return art
 
     def download_datadict(self):
         url = self.host + "/data/3/download_dict/table/1750/"
