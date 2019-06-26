@@ -133,10 +133,21 @@ class Article():
         print self.article.head()
 
 
-    def get_references(self):
-        match = self.article.body.apply(lambda x: re.findall('<a \w+-oid="(\d+)" \w+-otype="(\w+)" href="\/\w+\/\d+\/">([a-zA-Z0-9 \(\)._:]+)<\/a>', x, flags=0))
+    def get_references_old(self):
+        match = self.article.body.apply(lambda x:
+            re.findall(
+                r'<a \w+-oid=\"(\d+)\" \w+-otype=\"(\w+)\" href=\"[^>]+\">([^>]+)<\/a>',
+                x, flags=0))
         self.article['references'] = match
         return match # return a DataSeries indexed by source article ID, each element a list of references
+
+    def get_references(self):
+        match = self.article.body.apply(lambda x:
+            re.finditer(
+                r'<a \w+-oid=\"(\d+)\" \w+-otype=\"(\w+)\" href=\"[^>]+\">([^>]+)<\/a>',
+                x, flags=0))
+        self.article['references'] = match
+        return match # return a DataSeries indexed by source article ID, each element an iterator of MatchObjects
 
 
     def get_files(self):

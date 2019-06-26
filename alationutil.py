@@ -3,8 +3,8 @@ import time
 
 
 def log_me(txt):
-    print "{} {}".format(
-        time.strftime("%Y-%b-%d %H:%M:%S", time.localtime()),
+    print u"{} {}".format(
+        time.strftime(u"%Y-%b-%d %H:%M:%S", time.localtime()),
         txt)
 
 
