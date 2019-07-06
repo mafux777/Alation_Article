@@ -29,19 +29,31 @@ alation_1 = AlationInstance(url_1, user_1, passwd_1)
 #queries = alation_1.getQueries(1)
 
 #desired_template = "ABOK Article"
-desired_template = "ABOK Article"
+desired_template = "Alpha Omega Policy"
 allArticles  = alation_1.getArticles(template=desired_template) # download all articles
+#allArticles  = alation_1.getArticles() # download all articles
 Art = Article(allArticles)                    # convert to Article class
 
+users= Art.get_users()
 #media = Art.get_files()
 #alation_1.getMediaFile(media)
 
 refs = Art.get_references() # we get a series of MatchObjects
-#Art.to_csv(desired_template + ".csv")
+Art.to_csv(desired_template + ".csv")
 allTemplates = alation_1.getTemplates()          # download all templates (with their custom fields)
 # We need to have quite detailed information to create the template!
 
 custom_fields = alation_1.getCustomFields_from_template(desired_template) # this way we also get the template info
+
+# create a migration notes field to hold manual migration instructions
+migration_error = dict(allow_multiple=False, allowed_otypes=None, backref_name=None, backref_tooltip_text=None,
+                       builtin_name=None, field_type=u'RICH_TEXT',
+                       name_plural=u'Migration Notes', name_singular=u'Migration Notes',
+                       options=[])
+
+if custom_fields.shape[0]>0:
+    custom_fields = custom_fields.append(migration_error, ignore_index=True)
+
 
 # Next, we put the objects we want. We need to start with the custom fields, then the template,
 # then the articles, and finally the glossaries.
@@ -120,12 +132,10 @@ for i, r in refs.iteritems():
                 # On target machine
                 t_art = new_Article.get_article_by_name(target_ref_title)
                 if t_art.empty:
-                    error_string = "Missing ref from article {}/{} to {}".format(i, target_art_id, ref)
+                    error_string = u"Missing ref from article {}/{} to {}".format(i, target_art_id, wholematch)
                     # Create a dummy article with the error message
                     # The article then links to the error instead of somewhere random
-                    err_art = dict(title="Missing {}: {}".format(
-                        time.strftime("%Y-%b-%d %H:%M:%S", time.localtime()),
-                        target_ref_title),
+                    err_art = dict(title="(Dummy) {}".format(target_ref_title),
                     body=error_string)
                     t_art_id = target.postArticle(err_art)['id']
                 else:

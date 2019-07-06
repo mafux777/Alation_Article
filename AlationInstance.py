@@ -64,6 +64,12 @@ class AlationInstance():
         fields.index = fields.id
         return fields.sort_index()
 
+    def getCustomFieldID(self, name):
+        if name in self.existing_fields.name:
+            return self.existing_fields[self.existing_fields.name==name, "id"]
+        else:
+            return 0
+
     def getArticles(self, template='all', limit=100):
         url = self.host + "/integration/v1/article/"
         skip = 0
@@ -308,10 +314,13 @@ class AlationInstance():
         # Template name needs to be part of the URL
         template_name = template_name.replace(" ", "%20")
         url = self.host + bulk + template_name + "/article"
-        custom_fields_pd = self.existing_fields.loc[custom_fields, :]
+        if custom_fields.empty:
+            body = article.bulk_api_body()
+        else:
         # Body needs to be a text with one JSON per line
         # Note we are sending all custom fields to the function, maybe overkill!
-        body = article.bulk_api_body(custom_fields_pd).sum()
+            custom_fields_pd = self.existing_fields.loc[custom_fields, :]
+            body = article.bulk_api_body(custom_fields_pd)
         params=dict(replace_values = True, create_new = True)
         try:
             r = requests.post(url, data=body, headers=self.headers, params=params, verify=self.verify)
@@ -330,6 +339,8 @@ class AlationInstance():
         dt = self.existing_templates[self.existing_templates.title == desired_template]
         # should return a DataFrame with only one row
         CustomFields = pd.DataFrame(dt.iloc[0, 1])  # only look at first row and second column
+        if CustomFields.shape[0] == 0:
+            return CustomFields
         CustomFields.index = CustomFields.id
         CustomFields.options = CustomFields.options.apply(lambda x: ([y['title'] for y in x]) if x else None)
         # del CustomFields['id'] # for convenience, keep it?
