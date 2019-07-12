@@ -4,6 +4,7 @@ import pandas as pd
 from AlationInstance import AlationInstance
 from Article import Article
 from alationutil import log_me
+from secure_copy import secure_copy
 
 # import the necessary packages
 import argparse
@@ -26,17 +27,25 @@ user_1   = args['username']
 passwd_1 = args['password']
 alation_1 = AlationInstance(url_1, user_1, passwd_1)
 
-#queries = alation_1.getQueries(1)
+queries = alation_1.getQueries(1)
+queries.to_csv('queries.csv', encoding='utf-8')
+users = alation_1.getUsers()
+#dd = alation_1.download_datadict(1)
+#dd.to_csv('AA-DD.csv', encoding='utf-8')
 
-#desired_template = "ABOK Article"
-desired_template = "Alpha Omega Policy"
+desired_template = "ABOK Article"
+#desired_template = "Alpha Omega Policy"
 allArticles  = alation_1.getArticles(template=desired_template) # download all articles
 #allArticles  = alation_1.getArticles() # download all articles
 Art = Article(allArticles)                    # convert to Article class
 
 users= Art.get_users()
-#media = Art.get_files()
-#alation_1.getMediaFile(media)
+media = Art.get_files()
+alation_1.getMediaFile(media)
+secure_copy(host='3.130.86.60',
+            username='ec2-user',
+            key_filename='/Users/matthias.funke/.ssh/LightsailDefaultKey-us-east-2.pem',
+            local_dir='/Users/matthias.funke/Downloads/media/image_bank/')
 
 refs = Art.get_references() # we get a series of MatchObjects
 Art.to_csv(desired_template + ".csv")

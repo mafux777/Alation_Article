@@ -28,16 +28,16 @@ class AlationInstance():
         s = requests.Session()
         s.get(URL, verify=self.verify)
 
-        # csrtoken aus session cookie auslesen
+        # get the cookie token
         csrftoken = s.cookies.get('csrftoken')
 
-        # mit token und logindaten einloggen
+        # login with user name and password (and token)
         payload = {"csrfmiddlewaretoken": csrftoken, "ldap_user": email, "password": password}
         headers = {"Referer": URL}
         log_me("Logging in to {}".format(URL))
         r = s.post(URL, data=payload, verify=self.verify, headers=headers)
 
-        # header fuer weitere anfragen zurueckgeben
+        # get the session ID and store it for all future API calls
         sessionid = s.cookies.get('sessionid')
         headers = {"X-CSRFToken": csrftoken,
                    "Cookie": "csrftoken=" + csrftoken + "; sessionid=" + sessionid,
@@ -120,11 +120,13 @@ class AlationInstance():
         art = json.loads(r.content)
         return art
 
-    def download_datadict(self):
-        url = self.host + "/data/3/download_dict/table/1750/"
+    def download_datadict(self, ds_id):
+        url = self.host + "/data/"+str(ds_id)+"/download_dict/data/"+str(ds_id)+"/"
         params = dict(format='json')
         r = requests.get(url, headers=self.headers, verify=self.verify, params=params)
-        return r
+        r_parsed = json.loads(r.content)
+        #dd = pd.DataFrame(r_parsed)
+        return r_parsed
 
     def getTemplates(self):
         url = self.host + "/integration/v1/custom_template/"
@@ -350,12 +352,19 @@ class AlationInstance():
     def getQueries(self, ds_id):
         log_me("Getting queries")
         url = self.host + "/api/query/"
-        ## curl 'https://abok.alationproserv.com/api/query/?saved=true&discarded=false&author=6&order_by=-ts_updated&limit=20&values=id%2Cotype%2Curl%2Ctitle%2Cdescription%2Cauthor%2Cds%2Cschedules%2Cts_created%2Cts_updated%2Clast_visited%2Clast_updated_at%2Clast_autosaved_at%2Cexecution_tally%2Cnum_favs%2Cstmt_fps%2Cdisplay_content%2Cquery_group_ids%2Ccan_schedule' -H 'cookie: csrftoken=Fd85G5VkrwPhQsdXETREO7RVHOgn1zQt; sessionid=s0788qimb8s1eyjyde1yjiurjydiywdd' -H 'accept-encoding: gzip, deflate, br' -H 'accept-language: en-GB,en-US;q=0.9,en;q=0.8,de;q=0.7' -H 'user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.169 Safari/537.36' -H 'accept: application/json, text/javascript, */*; q=0.01' -H 'referer: https://abok.alationproserv.com/compose/query/98/' -H 'authority: abok.alationproserv.com' -H 'x-requested-with: XMLHttpRequest' --compressed
-        params = dict(limit=1000, datasource_id=ds_id)
+        params = dict(limit=1000, datasource_id=ds_id, saved=True, published=True)
         r = requests.get(url, headers=self.headers, verify=self.verify, params=params)
         queries = pd.DataFrame(json.loads(r.content))
-        queries.index = queries.id
+        queries = queries.loc[:, [u'title', u'description', u'published_content']]
         return queries.sort_index()
+
+    def getUsers(self):
+        log_me("Getting users")
+        url = self.host + "/api/user/"
+        r = requests.get(url, headers=self.headers, verify=self.verify)
+        users = pd.DataFrame(json.loads(r.content))
+        return users
+
 
     def getMediaFile(self, media_set, dir='/Users/matthias.funke/Downloads'):
         for filename in media_set:
