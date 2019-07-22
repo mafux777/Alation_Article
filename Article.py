@@ -2,8 +2,13 @@ import json
 import re
 
 import pandas as pd
+import datetime
+import os
+import pdfkit
+import abok
 
 from alationutil import *
+from collections import OrderedDict, deque
 
 
 class Article():
@@ -20,6 +25,10 @@ class Article():
             article['template_id']    = article.custom_templates.map(unpack_id)
             article['template_title'] = article.custom_templates.map(unpack_title)
             del article['custom_templates']
+        if 'children' in article:
+            article['child_id']    = article.children.map(unpack_children)
+            #article['template_title'] = article.custom_templates.map(unpack_title)
+            #del article['children']
         if 'custom_fields' in article:
             def extract_custom(art): # article is now one dict per article
                 f = art['custom_fields'] # f is now a list with only the custom fields (each is a dict)
@@ -153,3 +162,73 @@ class Article():
         users_pd = pd.DataFrame(users).drop_duplicates()
         users_pd.index = users_pd.id
         return users_pd
+
+    def create_pdf(self):
+        # Use pdfkit to create final ABOK pdf file
+        # Options for PDFKit (wkhtmltopdf really) to generate the pdf - https://wkhtmltopdf.org/usage/wkhtmltopdf.txt
+        bodyoptions = {
+            'page-size': 'Letter',
+            'footer-line': '',
+            'footer-center': 'For use only by Alation customers.  No duplication or transimission without permission is prohibited.',
+            'footer-font-size': '9',
+            'disable-internal-links': '',
+            'disable-external-links': '',
+            'dpi': '300',
+            'minimum-font-size': '12',
+            'disable-smart-shrinking': '',
+            'header-left': 'Alation Book of Knowledge',
+            'header-line': '',
+            'header-font-size': '9',
+            'header-spacing': '4',
+            'margin-bottom': '15',
+            'margin-top': '15',
+            'footer-spacing': '4',
+            'margin-left': '10',
+            'margin-right': '10',
+            'footer-right': '[page]/[toPage]',
+            'enable-toc-back-links': '',
+            'outline': '',
+            'quiet': ''
+        }
+        # Define the location of the created ABOK pdf file
+        ABOKpdffilename = u'ABOK' + datetime.datetime.now().strftime(u" %Y-%b-%d %H:%M ") + u'.pdf'
+        seq = self.check_sequence(51)
+        html = u""
+        for i in seq:
+            html = html + u'<h1 style="font-family:arial;font-size:14px;">' + self.article.title[i] + u'</h1></p>'
+            html = html + self.article.body[i] + u'</p>'
+        html2 = abok.clean_up(html)
+        pdfkit.from_string(html2, ABOKpdffilename, options=bodyoptions, cover='cover.html', cover_first=True)
+        log_me(u'Finished processing')
+
+    def check_sequence(self, first):
+        # we need to put the articles in a logical order.
+        # we put the first in front
+        log_me(u"First is {}/{}".format(
+            self.article.id[first],
+            self.article.title[first]))
+        order = deque([first])
+        # the to-do-list is all articles without the first
+        to_do_list = deque(self.article.index)
+        to_do_list.remove(first)
+        #next item should be a child or the next in the to-do-list
+        while(to_do_list):
+            # get the right most item
+            last = order[-1]
+            # we either remove a child or the next in the to-do list
+            # do we have children?
+            current_children = deque(self.article.children[last])
+            while(current_children):
+                c = current_children.pop()
+                try:
+                    to_do_list.remove(c['id'])
+                    to_do_list.appendleft(c['id'])
+                except:
+                    log_me(u"Article {}/{} does not appear to be loaded.".format(c['id'], c['title']))
+            next = to_do_list.popleft()
+            order.append(next) # next one
+            log_me(u"Next is {}/{}".format(
+                self.article.id[next],
+                self.article.title[next]
+            ))
+        return order

@@ -28,6 +28,12 @@ def parse_bulk_medata(r):
         return r.content
 
 
+def unpack_children(c):
+    if len(c)>0:
+        return [child['id'] for child in c]
+    else:
+        return None
+
 def unpack_id(x):
     if len(x)>0:
         return x[0]['id']
