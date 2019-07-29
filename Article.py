@@ -6,6 +6,7 @@ import datetime
 import os
 import pdfkit
 import abok
+from bs4 import BeautifulSoup
 
 from alationutil import *
 from collections import OrderedDict, deque
@@ -59,21 +60,33 @@ class Article():
         for id, article in self.article.iterrows():
             d = article['body']
             k = article['title']
+            log_me(u"Working on {}/{}".format(d, k))
             new_row = dict(description=d, key=k)
             new_row[u'Migration Notes'] = u"<ul>"
             # loop thru articles 1 by 1
             for j, field in custom_fields.iterrows():
+                log_me(u"Looping through...{}/{}".format(j, field))
                 # loop thru all fields we expect
                 f = article['custom_fields'] # f is now a list with only the custom fields (each is a dict)
                 if field['allow_multiple']:
                     name = field['name_singular']
                     new_row[name] = []
-                    for t in field['allowed_otypes']:
+                    if field['allowed_otypes']:
+                        for t in field['allowed_otypes']:
+                            log_me(u"Working on field with otypes {}".format(t))
+                            for f0 in f:
+                                if f0['field_name'] == field['name_singular'] and f0['value_type'] == t:
+                                    #new_row[name].append(dict(type=t, key=f0['value']))
+                                    new_row[u'Migration Notes'] = new_row[u'Migration Notes'] + \
+                                        u"<li>Manually add {}={}:{} from source article {}</li>\n".format(name, t, f0['value'], id)
+                    else:
+                        log_me(u"Working on multi-field {}".format(t))
                         for f0 in f:
                             if f0['field_name'] == field['name_singular'] and f0['value_type'] == t:
-                                #new_row[name].append(dict(type=t, key=f0['value']))
+                                # new_row[name].append(dict(type=t, key=f0['value']))
                                 new_row[u'Migration Notes'] = new_row[u'Migration Notes'] + \
-                                    u"<li>Manually add {}={}:{} from source article {}</li>\n".format(name, t, f0['value'], id)
+                                                              u"<li>Manually add {}={}:{} from source article {}</li>\n".format(
+                                                                  name, t, f0['value'], id)
                 else:
                     name = field['name_singular']
                     for f0 in f:
@@ -89,36 +102,36 @@ class Article():
     #     pass
 
     def to_csv(self, filename, encoding='utf-8'):
+        log_me(u"Creating file: {}".format(filename))
         csv = self.article.copy() # should be a copy
-        #csv.body.apply(lambda x: x.replace("\\n", "\n"))
-        #csv['Summary'].apply(lambda x: x.replace("\\n", "\n"))
-        del csv['id'] # the ID is meaningless when uploading, so let's not pretend
-        csv.index=csv['title']
+        del csv[u'id'] # the ID is meaningless when uploading, so let's not pretend
+        csv.index=csv[u'title']
         # the ID gets added to the CSV because it is also the index
-        del csv['attachments'] # unfortunately not supported yet by this script
-        #csv.author=csv.author.apply(get_user)
-        #body,
-        #children,
-        del csv['custom_fields'] # user should have already flattened them
-        #csv['editors']=csv.editors.apply(get_users)
-        del csv['has_children']
-        del csv['author']
-        del csv['editors']
-        #del csv['id']
-        del csv['private']
-        del csv['ts_created']
-        del csv['ts_updated']
-        del csv['template_id']
-        del csv['url']
-        del csv['references']
-        csv = csv.rename(index=str, columns={
-            "template_title": "template_name",
-            "title":"key",
-            "body":"description"
-        })
-        csv['object_type']='article'
-        csv['create_new']='Yes'
-        csv['tags']='migrated'
+        del csv[u'attachments'] # unfortunately not supported yet by this script
+        del csv[u'custom_fields'] # user should have already flattened them
+        del csv[u'has_children']
+        del csv[u'author']
+        del csv[u'editors']
+        del csv[u'private']
+        del csv[u'ts_created']
+        del csv[u'ts_updated']
+        del csv[u'template_id']
+        del csv[u'url']
+        del csv[u'references']
+        csv[u'template_name'] = csv.template_title
+        csv[u'key'] = csv.title
+        csv[u'description'] = csv.body
+        del csv[u'template_name']
+        del csv[u'key']
+        del csv[u'description']
+        # csv = csv.rename(index=str, columns={
+        #     u"template_title": u"template_name",
+        #     u"title":u"key",
+        #     u"body":u"description"
+        # })
+        csv[u'object_type']=u'article'
+        csv[u'create_new']=u'Yes'
+        csv[u'tags']=u'migrated'
         csv.to_csv(filename, encoding=encoding)
     def head(self):
         print self.article.head()
@@ -133,14 +146,19 @@ class Article():
         self.article['references'] = match
         return match # return a DataSeries indexed by source article ID, each element an iterator of MatchObjects
 
-
     def get_files(self):
+        soup = BeautifulSoup(self.article.body.sum(), "html5lib")
+        images = soup.findAll('img')
+        src = [i['src'] for i in images]
+        return set(src)
+
+    def get_files_old(self):
         match = self.article.body.apply(lambda x: re.findall(
             '<img class=\"([/a-z -_0-9]*)\" +src=\"([/a-z -_0-9]*)\" +style=\"width: ([/a-z -_0-9]*)\">', x, flags=0))
         unique_list_files = set()
         for i, m in match.iteritems():
             for n in m:
-                relative_url = n[1].replace("https://abok.alationproserv.com", "")
+                relative_url = n[1].replace("https://abok.alationproserv.com", "") # n[1] previously
                 #log_me("{}:{}".format(i, relative_url))
                 unique_list_files.add(relative_url)
         return unique_list_files
@@ -163,20 +181,21 @@ class Article():
         users_pd.index = users_pd.id
         return users_pd
 
-    def create_pdf(self):
+    def create_pdf(self, first):
+        now = datetime.datetime.now()
         # Use pdfkit to create final ABOK pdf file
         # Options for PDFKit (wkhtmltopdf really) to generate the pdf - https://wkhtmltopdf.org/usage/wkhtmltopdf.txt
         bodyoptions = {
             'page-size': 'Letter',
             'footer-line': '',
-            'footer-center': 'For use only by Alation customers.  No duplication or transimission without permission is prohibited.',
+            'footer-center': 'For use only by Alation customers.  No duplication or transmission without permission.',
             'footer-font-size': '9',
-            'disable-internal-links': '',
-            'disable-external-links': '',
+            #'disable-internal-links': True,
+            #'disable-external-links': True,
             'dpi': '300',
             'minimum-font-size': '12',
             'disable-smart-shrinking': '',
-            'header-left': 'Alation Book of Knowledge',
+            'header-left': u'Alation Book of Knowledge (Draft)' + now.strftime(u" %Y-%m-%d %H:%M "),
             'header-line': '',
             'header-font-size': '9',
             'header-spacing': '4',
@@ -191,15 +210,17 @@ class Article():
             'quiet': ''
         }
         # Define the location of the created ABOK pdf file
-        ABOKpdffilename = u'ABOK' + datetime.datetime.now().strftime(u" %Y-%b-%d %H:%M ") + u'.pdf'
-        seq = self.check_sequence(51)
-        html = u""
+        ABOKpdffilename = u'Draft ABOK' + now.strftime(u" %Y-%b-%d %H_%M ") + u'.pdf'
+        seq = self.check_sequence(first)
+        html = u'<meta http-equiv="Content-Type" content="text/html; charset=utf-8">' +\
+               u'<link rel="stylesheet" href="https://use.typekit.net/pno7yrt.css">' +\
+               u'<link href="alation.css" rel="stylesheet" type="text/css">'
         for i in seq:
-            html = html + u'<h1 style="font-family:arial;font-size:14px;">' + self.article.title[i] + u'</h1></p>'
+            html = html + u'<h1>' + self.article.title[i] + u'</h1></p>'
             html = html + self.article.body[i] + u'</p>'
         html2 = abok.clean_up(html)
-        pdfkit.from_string(html2, ABOKpdffilename, options=bodyoptions, cover='cover.html', cover_first=True)
-        log_me(u'Finished processing')
+        pdfkit.from_string(html2, ABOKpdffilename, options=bodyoptions, css="alation.css", cover='cover.html', cover_first=True)
+        log_me(u'pdfkit finished processing')
 
     def check_sequence(self, first):
         # we need to put the articles in a logical order.
@@ -221,10 +242,11 @@ class Article():
             while(current_children):
                 c = current_children.pop()
                 try:
+                    # move to the top of the to-do list
                     to_do_list.remove(c['id'])
                     to_do_list.appendleft(c['id'])
                 except:
-                    log_me(u"Article {}/{} does not appear to be loaded.".format(c['id'], c['title']))
+                    log_me(u"WARNING --- Article {}/{} does not appear to be loaded.".format(c['id'], c['title']))
             next = to_do_list.popleft()
             order.append(next) # next one
             log_me(u"Next is {}/{}".format(

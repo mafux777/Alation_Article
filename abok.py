@@ -1,3 +1,4 @@
+# coding=utf-8
 #********************************************************************************************************
 #
 # Purpose: Generate ABOK pdf file from the Alation ABOK instance
@@ -13,48 +14,56 @@ from bs4 import BeautifulSoup
 import re
 import sys
 import argparse
+import pdfkit
+from alationutil import *
 
 def clean_up(html):
-    soup = BeautifulSoup(html, features="html.parser")
-    print('Cleaning up some html formatting .....')
+    soup = BeautifulSoup(html, "html5lib")
 
     #Remove all hrefs using Beautiful soup so dead links are not in the pdf
-    for a in soup.findAll('a'):
-        del a['href']
+    links = soup.findAll('a')
+    for a in links:
+        if a.string:
+            print a
+            n = a.string.wrap(soup.new_tag("m"))
+            a.replace_with(n)
+
+    images = soup.findAll('img')
+    for i in images:
+        a = i.attrs
+        if u'style' in a:
+            width = re.search(r'width: ([0-9]+)px', a[u'style'], re.UNICODE)
+            if width:
+                w = int(width.group(1))
+                w_max = 600
+                if w>w_max:
+                    log_me(u'We have an issue with {} - forcing to {}'.format(i, w_max))
+                    a[u'style'] = u"width: {}px".format(w_max)
+
 
     #Save back from soup object to string and encode back to unicode because pdfkit needs unicode
-    html = str(soup)
-    html = html.decode('utf-8')
-
-    #Remove unicode characters that are not in the ascii range so they don't show up in the pdf
-    html = unicodedata.normalize("NFKD", html).encode('ascii','ignore')
+    html = soup.prettify()
 
     #// Replace img paths to point to the local image location
-    html = html.replace('/media','/Users/matthias.funke/media')
-    html = html.replace('https://abok.alationproserv.com/media/','/Users/matthias.funke/media/')
+    html = html.replace('/media','/Users/matthias.funke/Downloads/media')
+    html = html.replace('https://abok.alationproserv.com/media/','/Users/matthias.funke/Downloads/media/')
 
-    #Fix a bit more formatting - css styles seem to be ignored in all cases no matter whether they are html inline, external or used as attributes in the html
-    html = html.replace('<p>','<p style="font-family:arial;font-size:12px;">')
-    html = html.replace('<h1>','<h1 style="font-family:arial;font-size:12px;">')
-    html = html.replace('<h2>','<h2 style="font-family:arial;font-size:12px;">')
-    html = html.replace('<h3>','<h3 style="font-family:arial;font-size:12px;">')
-    html = html.replace('<tbody>','<tbody style="font-family:arial;font-size:12px;">')
-    html = html.replace('<ul>','<ul style="font-family:arial;font-size:12px;">')
-    html = html.replace('<thead>','<thead style="font-family:arial;font-size:12px;">')
-    html = html.replace('<table style="width: 100%;">','<table style="width: 100%;border:"1";cellpadding:"2";cellspacing:"2">')
-    html = html.replace('<table border="1" cellpadding="0" cellspacing="0"','<table border="1" cellpadding="2" cellspacing="2"')
-
+    # Find some strange chars that happen after . and replace with a single space
+    m5 = re.findall(pattern=u'([.]+)([\s]{2})([a-zA-Z]+)',string=html,flags=re.UNICODE)
+    m6 = list(set([m[1] for m in m5]))
+    for m in m6:
+        html = re.sub(pattern=m, repl=u' ', string=html, count=0, flags=re.UNICODE)
+    # Fix a funny char and replace with normal apostrophe
+    html = re.sub(pattern=u'\u2019', repl=u"'", string=html, count=0, flags=re.UNICODE)
     #Point to cover html file
     cover = 'cover.html'
 
-    #Fix a bit of formatting on the cover page - css styles seem to be ignored in all cases no matter whether they are html inline, external or used as attributes in the html
-    cover = cover.replace('<h1>','<h1 style="font-family:arial;font-size:32px;">')
-    cover = cover.replace('<h2>','<h2 style="font-family:arial;font-size:28px;">')
-    cover = cover.replace('<p>','<p style="font-family:arial;font-size:16px;">')
     return html
 
-
-
-
-
+if __name__ == "__main__":
+    with open('clean_html.html', 'r') as html:
+         html_str = html.read()
+    t = clean_up(html_str)
+    pdfkit.from_string(t, "abok-test.pdf", css="alation.css")
+    pass
 

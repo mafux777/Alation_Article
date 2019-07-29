@@ -25,6 +25,7 @@ if __name__ == "__main__":
 
     url_1    = args['host']
     user_1   = args['username']
+    user_1_only = user_1.split(u'@')[0]
     passwd_1 = args['password']
     alation_1 = AlationInstance(url_1, user_1, passwd_1)
 
@@ -34,17 +35,22 @@ if __name__ == "__main__":
     #dd = alation_1.download_datadict(1)
     #dd.to_csv('AA-DD.csv', encoding='utf-8')
 
-    desired_template = "ABOK Article"
+    desired_template = u"ABOK Article"
+    log_me(u"Getting desired articles")
     allArticles  = alation_1.getArticles(template=desired_template) # download all articles
     Art = Article(allArticles)                    # convert to Article class
-    Art.create_pdf()
+    Art.create_pdf(51)
+    raise KeyboardInterrupt # cheap way to stop here!
     #users= Art.get_users()
+    #log_me(u"Getting media files links")
     #media = Art.get_files()
-    #alation_1.getMediaFile(media)
+    #log_me(u"Getting media files via download")
+    #alation_1.getMediaFile(media, dir=u'/Users/'+user_1_only+u'/Downloads')
+    # log_me(u"Securely copying media files to remote host")
     # secure_copy(host='3.130.86.60',
     #             username='ec2-user',
     #             key_filename='/Users/matthias.funke/.ssh/LightsailDefaultKey-us-east-2.pem',
-    #             local_dir='/Users/matthias.funke/Downloads/media/image_bank/')
+    #             local_dir=   '/Users/matthias.funke/Downloads/media/image_bank/')
 
     refs = Art.get_references() # we get a series of MatchObjects
     Art.to_csv(desired_template + ".csv")

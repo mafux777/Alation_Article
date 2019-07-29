@@ -1,0 +1,41 @@
+/* Generic Selectors */
+
+body {
+   font-family: Arial, Helvetica, sans-serif;
+   font-size: 14px;
+   color: #4e4e4e;
+}
+
+li {
+   list-style-type: circle;
+   line-height: 150%;
+}
+
+h1 {
+   font-family: museo-sans, Arial, Helvetica, sans-serif;
+   font-size: 33px;
+   font-weight: 700;
+   color: #F57C00;
+   page-break-before: always;
+}
+
+h2 {
+   font-family: museo-sans, Arial, Helvetica, sans-serif;
+   font-size: 25px;
+   font-weight: 500;
+   color: #4e4e4e;
+}
+
+h3 {
+   font-family: museo-sans, Arial, Helvetica, sans-serif;
+   font-size: 18px;
+   font-weight: 500;
+   color: #4e4e4e;
+}
+
+h4 {
+   font-family: museo-sans, Arial, Helvetica, sans-serif;
+   font-size: 14px;
+   font-weight: 500;
+   color: #4e4e4e;
+}

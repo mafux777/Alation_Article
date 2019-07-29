@@ -4,7 +4,8 @@ import time
 
 import pandas as pd
 import requests
-
+from urllib2 import urlopen
+from urlparse import urlparse
 
 from alationutil import log_me
 from pandas.io.json import json_normalize
@@ -366,11 +367,19 @@ class AlationInstance():
         return users
 
 
-    def getMediaFile(self, media_set, dir='/Users/matthias.funke/Downloads'):
+    def getMediaFile(self, media_set, dir):
         for filename in media_set:
-            log_me("Getting file {}".format(filename))
-            url = self.host + filename
-
+            try:
+                log_me(filename)
+                url = urlopen(filename)
+                filename = urlparse(filename).path
+            except ValueError:  # invalid URL - that means it's only a path
+                url = self.host + filename
+            except:
+                # sometimes we get Error 403 (unauth.), no problem
+                url = filename
+                filename = urlparse(filename).path
+            log_me(url)
             r = requests.get(url, headers=self.headers, verify=self.verify)
             if r.status_code != 200:
                 raise Exception(r.text)
