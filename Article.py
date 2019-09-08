@@ -56,16 +56,17 @@ class Article():
     # converts the Article into a JSON accepted by the Bulk API
     # encapsulates the custom fields (tricky part)
     def bulk_api_body(self, custom_fields=pd.DataFrame()): # expects a DataFrame with relevant custom fields
+        log_me("Creating Body for Bulk API")
         body = ""
         for id, article in self.article.iterrows():
             d = article['body']
             k = article['title']
-            log_me(u"Working on {}/{}".format(d, k))
+            #log_me(u"Working on {}/{}".format(d, k))
             new_row = dict(description=d, key=k)
             new_row[u'Migration Notes'] = u"<ul>"
             # loop thru articles 1 by 1
             for j, field in custom_fields.iterrows():
-                log_me(u"Looping through...{}/{}".format(j, field))
+                #log_me(u"Looping through...{}/{}".format(j, field))
                 # loop thru all fields we expect
                 f = article['custom_fields'] # f is now a list with only the custom fields (each is a dict)
                 if field['allow_multiple']:
@@ -80,7 +81,7 @@ class Article():
                                     new_row[u'Migration Notes'] = new_row[u'Migration Notes'] + \
                                         u"<li>Manually add {}={}:{} from source article {}</li>\n".format(name, t, f0['value'], id)
                     else:
-                        log_me(u"Working on multi-field {}".format(t))
+                        #log_me(u"Working on multi-field {}".format(t))
                         for f0 in f:
                             if f0['field_name'] == field['name_singular'] and f0['value_type'] == t:
                                 # new_row[name].append(dict(type=t, key=f0['value']))
@@ -146,6 +147,57 @@ class Article():
         self.article['references'] = match
         return match # return a DataSeries indexed by source article ID, each element an iterator of MatchObjects
 
+    def convert_references(self):
+        for a in self.article.itertuples():
+            soup = BeautifulSoup(a.body, "html5lib")
+            match = soup.findAll('a')
+            for m in match:
+                if 'data-oid' in m.attrs:
+                    oid=m['data-oid']
+                    otype=m['data-otype']
+                    # href=m['href']
+                    # href_components = href.split('/')
+                    if otype=='article':
+                        try:
+                            actual_title = self.article.at[int(oid), 'title']
+                        except:
+                            log_me("Broken reference {}".format(m))
+                            actual_title="BROKEN REF"
+                        if actual_title != m.get_text():
+                            log_me(("{}<>{}").format(actual_title, m.get_text()))
+                    t = u"[***{}***\\{}/{}]".format(actual_title, otype, oid)
+                    # replace the anchor tag with a string in square brackets
+                    m.replace_with(t)
+                    self.article.at[a.Index, 'body'] = soup.prettify() # update the article body
+        return match # return a DataSeries indexed by source article ID, each element an iterator of MatchObjects
+
+    def convert_references_2(self):
+        # First pass: create a DataFrame of target articles with
+        # New articles that are being migrated or referenced
+        # All references to articles "zero-ed out" - will be re-calculated in Second Pass
+        for a in self.article.itertuples():
+            soup = BeautifulSoup(a.body, "html5lib")
+            # Find all Anchors
+            match = soup.findAll('a')
+            for m in match:
+                # We only care about Alation anchors, identified by the attr data-oid
+                if 'data-oid' in m.attrs:
+                    oid=m['data-oid']
+                    otype=m['data-otype']
+                    # For the moment, we only implement references to Articles
+                    if otype=='article':
+                        try:
+                            actual_title = self.article.at[int(oid), 'title']
+                        except:
+                            log_me("Warning! Ref to article not found {}".format(m))
+                            actual_title=m.get_text()
+                        m.string = actual_title
+                        m['data-oid'] = 0
+                        del m['href']
+                        m['title'] = actual_title
+                        self.article.at[a.Index, 'body'] = soup.prettify() # update the article body
+
+
     def get_files(self):
         soup = BeautifulSoup(self.article.body.sum(), "html5lib")
         images = soup.findAll('img')
@@ -167,8 +219,9 @@ class Article():
     def get_article_by_name(self, name):
         match = self.article[self.article.title==name]
         if match.shape[0] == 0:
-            log_me("Could not find article with the name '{}'".format(name))
-        return match
+            return None
+        else:
+            return match
 
     def get_users(self):
         authors = list(self.article.author)
@@ -181,7 +234,7 @@ class Article():
         users_pd.index = users_pd.id
         return users_pd
 
-    def create_pdf(self, first):
+    def create_pdf(self, first, additional_html=''):
         now = datetime.datetime.now()
         # Use pdfkit to create final ABOK pdf file
         # Options for PDFKit (wkhtmltopdf really) to generate the pdf - https://wkhtmltopdf.org/usage/wkhtmltopdf.txt
@@ -219,6 +272,7 @@ class Article():
             html = html + u'<h1>' + self.article.title[i] + u'</h1></p>'
             html = html + self.article.body[i] + u'</p>'
         html2 = abok.clean_up(html)
+        html2 = html2 + additional_html
         pdfkit.from_string(html2, ABOKpdffilename, options=bodyoptions, css="alation.css", cover='cover.html', cover_first=True)
         log_me(u'pdfkit finished processing')
 

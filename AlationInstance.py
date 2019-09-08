@@ -9,6 +9,13 @@ from urlparse import urlparse
 
 from alationutil import log_me
 from pandas.io.json import json_normalize
+from os import walk
+from os.path import basename
+
+import errno
+import os
+from Article import Article
+from query import *
 
 class AlationInstance():
     def __init__(self, host, email, password, verify=True):
@@ -21,9 +28,6 @@ class AlationInstance():
         self.existing_templates = self.getTemplates() # store existing templates
 
     def login(self, email, password):
-        # -- just in case, grab an API token as well
-        # self.token = requests.post(self.host + '/api/v1/getToken/', files=dict(username = email,
-        #                                                                           password = password))
         URL = self.host + '/login/'
 
         s = requests.Session()
@@ -72,6 +76,7 @@ class AlationInstance():
             return 0
 
     def getArticles(self, template='all', limit=100):
+        log_me("Getting Articles from Instance")
         url = self.host + "/integration/v1/article/"
         skip = 0
         articles = pd.DataFrame()
@@ -225,7 +230,7 @@ class AlationInstance():
             "value": None,
         }
 
-        log_me("Creating a new custom field {}".format(payload))
+        log_me("Creating a new custom field {}".format(name_singular))
 
         url = self.host + "/ajax/custom_field/"
 
@@ -244,7 +249,7 @@ class AlationInstance():
             field_exists = self.existing_fields.loc[self.existing_fields.name_singular==custom_f['name_singular']]
             # should return only one row if the field exists already
             if len(field_exists)==0:
-                log_me("Putting custom field {}".format(custom_f))
+                log_me("Putting custom field {}".format(custom_f['name_singular']))
                 if custom_f['options']:
                     custom_f['options'] = json.dumps(
                     [{"title": option, "tooltip_text": None, "old_index": None, "article_id": None} \
@@ -265,7 +270,7 @@ class AlationInstance():
                 self.existing_fields = self.getCustomFields() # so we don't get a duplicate next time (could be more efficient)
                 return field['id']
             elif len(field_exists)==1:
-                log_me("{} already exists (info only)".format(field_exists.iloc[0, 6]))
+                #log_me("{} already exists (info only)".format(field_exists.iloc[0, 6]))
                 return field_exists.iloc[0, 6]  # ID of the field
             else:
                 log_me("WARNING -- MULTIPLE FIELDS WITH THE SAME NAME")
@@ -291,7 +296,7 @@ class AlationInstance():
                 url = self.host + "/ajax/custom_template/"
                 headers = self.headers
                 headers['Referer'] = url
-                log_me("Putting template {}:{}".format(template, payload))
+                #log_me("Putting template {}:{}".format(template, title))
                 r = requests.post(url, json=payload, headers=headers, verify=self.verify)
                 if r.status_code != 200:
                     raise Exception(r.text)
@@ -314,6 +319,7 @@ class AlationInstance():
 
     # prepare the Articles and upload via Bulk API
     def putArticles(self, article, template_name, custom_fields, bulk="/api/v1/bulk_metadata/custom_fields/"):
+        log_me("Putting Articles on Instance")
         # Template name needs to be part of the URL
         template_name = template_name.replace(" ", "%20")
         url = self.host + bulk + template_name + "/article"
@@ -338,6 +344,7 @@ class AlationInstance():
             log_me("Unexpected error:", sys.exc_info()[0])
             raise
 
+
     def getCustomFields_from_template(self, desired_template):
         dt = self.existing_templates[self.existing_templates.title == desired_template]
         # should return a DataFrame with only one row
@@ -351,13 +358,38 @@ class AlationInstance():
         return CustomFields.sort_index()
 
     def getQueries(self, ds_id):
-        log_me("Getting queries")
-        url = self.host + "/api/query/"
+        log_me(u"Getting queries")
+        url = self.host + u"/api/query/"
         params = dict(limit=1000, datasource_id=ds_id, saved=True, published=True)
         r = requests.get(url, headers=self.headers, verify=self.verify, params=params)
         queries = pd.DataFrame(json.loads(r.content))
         queries = queries.loc[:, [u'title', u'description', u'published_content']]
         return queries.sort_index()
+
+    def putQueries_alt(self, ds_id, queries):
+        # -- just in case, grab an API token as well
+        token = u'...'
+        log_me(u"Putting queries")
+        url = self.host + u"/integration/v1/query/"
+        for single_query in queries.itertuples():
+            body={}
+            body[u'content'] = u'-- Title: ' + single_query.title + u'\n' + single_query.published_content
+            body[u'datasource_id'] = ds_id
+            r = requests.post(url, headers=dict(token=token), verify=self.verify, json=body)
+
+    def putQueries(self, ds_id, queries):
+        log_me(u"Putting queries")
+        url = self.host + u"/api/query/"
+        for single_query in queries.itertuples():
+            log_me(single_query.title)
+            body={}
+            body[u'content'] = single_query.published_content
+            body[u'ds_id'] = ds_id
+            body[u'title'] = single_query.title
+            body[u'description'] = single_query.description
+            # body[u'published'] = True
+            r = requests.post(url, headers=self.headers, verify=self.verify, json=body)
+            h = generate_html(single_query)
 
     def getUsers(self):
         log_me("Getting users")
@@ -367,10 +399,23 @@ class AlationInstance():
         return users
 
 
+    def mkdir_p(self, path):
+        try:
+            os.makedirs(path)
+        except OSError as exc:  # Python >2.5
+            if exc.errno == errno.EEXIST and os.path.isdir(path):
+                pass
+            else:
+                raise
+
     def getMediaFile(self, media_set, dir):
+        # create the download directory if it doesn't exist already
+        self.mkdir_p(dir+'/media/image_bank')
+        # get a list of existing files
+        (_, _, existing_files) = walk(dir+'/media/image_bank').next()
         for filename in media_set:
             try:
-                log_me(filename)
+                #log_me(filename)
                 url = urlopen(filename)
                 filename = urlparse(filename).path
             except ValueError:  # invalid URL - that means it's only a path
@@ -379,10 +424,98 @@ class AlationInstance():
                 # sometimes we get Error 403 (unauth.), no problem
                 url = filename
                 filename = urlparse(filename).path
-            log_me(url)
-            r = requests.get(url, headers=self.headers, verify=self.verify)
-            if r.status_code != 200:
-                raise Exception(r.text)
-            open(dir + filename, 'wb').write(r.content)
+            if basename(filename) in existing_files:
+                #log_me(u"Good news - no need to download {}".format(filename))
+                pass
+            else:
+                log_me(u"Downloading and saving {}".format(url))
+                r = requests.get(url, headers=self.headers, verify=self.verify)
+                if r.status_code != 200:
+                    raise Exception(r.text)
+                open(dir + filename, 'wb').write(r.content)
+
+    def fix_children(self, source_articles):
+        # Let's read all articles again so we get the IDs, too.
+        new_Article = self.getArticles()
+        # iterate through all articles with children
+        art_with_children = source_articles[source_articles.has_children]
+        for a in art_with_children.itertuples():
+            # a is a parent
+            t = a.title
+            id = a.id
+            children = a.children
+            # see if the article exists on the target and what its ID is
+            target_parent = new_Article[new_Article.title==t]
+            new_children = []
+            if target_parent.empty:
+                log_me("Skipping to next article in the list - make sure to replicate articles first")
+            else:
+                target_parent_id = int(target_parent[u'id'])
+                for child in children:
+                    child_id = child[u'id']
+                    child_title = child[u'title']
+                    # On target machine
+                    target_child = new_Article[new_Article.title==child_title]
+                    if target_child.empty:
+                        log_me("No target child: ".format(child_title))
+                    else:
+                        target_child_id = target_child.iloc[0, :]['id']
+                        new_children.append(target_child_id)
+                new_article = dict(body=target_parent.loc[target_parent_id, u'body'], title=t, children=
+                                   [dict(id=new_child, otype="article") for new_child in new_children]
+                                   ) # only the required fields...
+                log_me(u"Updating article {}:{}->{}".format(id, t, new_children))
+                updated_art = self.updateArticle(target_parent_id, new_article)
 
 
+    def fix_refs(self):
+        log_me("Pass 2: Getting all Articles on Target")
+        articles = self.getArticles()
+        articles['updated'] = False
+        titles = articles.title
+
+        for a in articles.itertuples():
+            t = a.title
+            id = a.id
+            soup = BeautifulSoup(a.body, "html5lib")
+            update_needed = False
+            # Find all Anchors
+            match = soup.findAll('a')
+            for m in match:
+                # We only care about Alation anchors, identified by the attr data-oid
+                if 'data-oid' in m.attrs:
+                    oid = m['data-oid']
+                    otype = m['data-otype']
+                    if 'title' in m.attrs:
+                        title = m['title']
+                    else:
+                        title = m.get_text()
+                    # For the moment, we only implement references to Articles
+                    if otype == 'article':
+                        art_match = articles.title==title
+                        if art_match.any():
+                            matching_articles = articles[art_match]
+                            if matching_articles.shape[0] == 0:
+                                log_me("No match for {}".format(title))
+                            #elif matching_articles.shape[0] > 1:
+                            #    log_me("More than one match for {}".format(m))
+                            else:
+                                # m is a reference to somewhere and we need to fix it.
+                                oid = (matching_articles.iloc[0]).id
+                                m['data-oid'] = oid
+                                m['href'] = "/{}/{}/".format(otype, oid)
+
+                                articles.at[id, 'body'] = soup.prettify()  # update the article body
+                                articles.at[id, 'updated'] = True  # update the article body
+                                update_needed = True
+
+                        else:
+                            log_me("No match for {}".format(title))
+            if update_needed:
+                new_article = dict(body=articles.at[id, 'body'], title=t)  # only the required fields...
+                log_me(u"Updating article {}:{}->{}".format(id, t, title))
+                try:
+                    updated_art = self.updateArticle(id, new_article)
+                    #log_me(updated_art)
+                except:
+                    log_me("UNSUCCESSFUL: {}/{}".format(id, new_article))

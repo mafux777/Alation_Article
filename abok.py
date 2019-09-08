@@ -23,22 +23,24 @@ def clean_up(html):
     #Remove all hrefs using Beautiful soup so dead links are not in the pdf
     links = soup.findAll('a')
     for a in links:
-        if a.string:
-            print a
-            n = a.string.wrap(soup.new_tag("m"))
-            a.replace_with(n)
+        # Let's remove all hyperlinks to Alation Objects only
+        if u"data-otype" in a.attrs:
+            if a.string:
+                # "m" is a convenience tag which has no effect
+                n = a.string.wrap(soup.new_tag("m"))
+                a.replace_with(n)
 
-    images = soup.findAll('img')
-    for i in images:
-        a = i.attrs
-        if u'style' in a:
-            width = re.search(r'width: ([0-9]+)px', a[u'style'], re.UNICODE)
-            if width:
-                w = int(width.group(1))
-                w_max = 600
-                if w>w_max:
-                    log_me(u'We have an issue with {} - forcing to {}'.format(i, w_max))
-                    a[u'style'] = u"width: {}px".format(w_max)
+    # images = soup.findAll('img')
+    # for i in images:
+    #     a = i.attrs
+    #     if u'style' in a:
+    #         width = re.search(r'width: ([0-9]+)px', a[u'style'], re.UNICODE)
+    #         if width:
+    #             w = int(width.group(1))
+    #             w_max = 800
+    #             if w>w_max:
+    #                 log_me(u'We have an issue with {} - forcing to {}'.format(i, w_max))
+    #                 a[u'style'] = u"width: {}px".format(w_max)
 
 
     #Save back from soup object to string and encode back to unicode because pdfkit needs unicode
