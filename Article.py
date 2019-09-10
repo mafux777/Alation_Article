@@ -74,7 +74,7 @@ class Article():
                     new_row[name] = []
                     if field['allowed_otypes']:
                         for t in field['allowed_otypes']:
-                            log_me(u"Working on field with otypes {}".format(t))
+                            #log_me(u"Working on field with otypes {}".format(t))
                             for f0 in f:
                                 if f0['field_name'] == field['name_singular'] and f0['value_type'] == t:
                                     #new_row[name].append(dict(type=t, key=f0['value']))
@@ -103,7 +103,7 @@ class Article():
     #     pass
 
     def to_csv(self, filename, encoding='utf-8'):
-        log_me(u"Creating file: {}".format(filename))
+        #log_me(u"Creating file: {}".format(filename))
         csv = self.article.copy() # should be a copy
         del csv[u'id'] # the ID is meaningless when uploading, so let's not pretend
         csv.index=csv[u'title']
@@ -134,44 +134,11 @@ class Article():
         csv[u'create_new']=u'Yes'
         csv[u'tags']=u'migrated'
         csv.to_csv(filename, encoding=encoding)
+
     def head(self):
         print self.article.head()
 
-
-
-    def get_references(self):
-        match = self.article.body.apply(lambda x:
-            re.finditer(
-                r'<a \w+-oid=\"(\d+)\" \w+-otype=\"(\w+)\" href=\"[^>]+\">([^>]+)<\/a>',
-                x, flags=0))
-        self.article['references'] = match
-        return match # return a DataSeries indexed by source article ID, each element an iterator of MatchObjects
-
     def convert_references(self):
-        for a in self.article.itertuples():
-            soup = BeautifulSoup(a.body, "html5lib")
-            match = soup.findAll('a')
-            for m in match:
-                if 'data-oid' in m.attrs:
-                    oid=m['data-oid']
-                    otype=m['data-otype']
-                    # href=m['href']
-                    # href_components = href.split('/')
-                    if otype=='article':
-                        try:
-                            actual_title = self.article.at[int(oid), 'title']
-                        except:
-                            log_me("Broken reference {}".format(m))
-                            actual_title="BROKEN REF"
-                        if actual_title != m.get_text():
-                            log_me(("{}<>{}").format(actual_title, m.get_text()))
-                    t = u"[***{}***\\{}/{}]".format(actual_title, otype, oid)
-                    # replace the anchor tag with a string in square brackets
-                    m.replace_with(t)
-                    self.article.at[a.Index, 'body'] = soup.prettify() # update the article body
-        return match # return a DataSeries indexed by source article ID, each element an iterator of MatchObjects
-
-    def convert_references_2(self):
         # First pass: create a DataFrame of target articles with
         # New articles that are being migrated or referenced
         # All references to articles "zero-ed out" - will be re-calculated in Second Pass
@@ -189,13 +156,26 @@ class Article():
                         try:
                             actual_title = self.article.at[int(oid), 'title']
                         except:
-                            log_me("Warning! Ref to article not found {}".format(m))
+                            log_me("Warning! Ref to article not found {}->{}".format(a.title, m))
                             actual_title=m.get_text()
                         m.string = actual_title
                         m['data-oid'] = 0
                         del m['href']
                         m['title'] = actual_title
                         self.article.at[a.Index, 'body'] = soup.prettify() # update the article body
+                    # elif otype=='query':
+                    #     m['data-oid'] = 0
+                    #     del m['href']
+                    #     m['title'] = m.get_text()
+                    #     self.article.at[a.Index, 'body'] = soup.prettify() # update the article body
+                    else:
+                        log_me(m)
+                        m['data-oid'] = 0
+                        del m['href']
+                        m['title'] = m.get_text()
+                        self.article.at[a.Index, 'body'] = soup.prettify() # update the article body
+                else:
+                    log_me(u"External link: {} -> {}".format(a.id, m))
 
 
     def get_files(self):
@@ -279,9 +259,9 @@ class Article():
     def check_sequence(self, first):
         # we need to put the articles in a logical order.
         # we put the first in front
-        log_me(u"First is {}/{}".format(
-            self.article.id[first],
-            self.article.title[first]))
+        # log_me(u"First is {}/{}".format(
+        #     self.article.id[first],
+        #     self.article.title[first]))
         order = deque([first])
         # the to-do-list is all articles without the first
         to_do_list = deque(self.article.index)
@@ -303,8 +283,8 @@ class Article():
                     log_me(u"WARNING --- Article {}/{} does not appear to be loaded.".format(c['id'], c['title']))
             next = to_do_list.popleft()
             order.append(next) # next one
-            log_me(u"Next is {}/{}".format(
-                self.article.id[next],
-                self.article.title[next]
-            ))
+            # log_me(u"Next is {}/{}".format(
+            #     self.article.id[next],
+            #     self.article.title[next]
+            # ))
         return order

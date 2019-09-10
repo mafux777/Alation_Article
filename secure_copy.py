@@ -1,27 +1,40 @@
 import base64
 import paramiko
 
-from scp import SCPClient
+#from scp import SCPClient
+from pip._vendor import progress
+from scpclient import WriteDir, Write
+from contextlib import *
+import sys
 
-
-def secure_copy(host, username, key_filename, local_dir):
-    client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.client.AutoAddPolicy)
-    client.connect(host, username, key_filename)
-    # stdin, stdout, stderr = client.exec_command('ls')
-    # for line in stdout:
-    #     print('... ' + line.strip('\n'))
-    # client.close()
+from zipfile import ZipFile
 
 
 
-    # SCPCLient takes a paramiko transport as an argument
-    scp_client = SCPClient(client.get_transport())
+def extract_files():
+    with closing(ZipFile('ABOK_media_files.zip', 'r')) as myzip:
+        x = myzip.extractall()
+
+def list_files():
+    try:
+        with closing(ZipFile('ABOK_media_files.zip', 'r')) as myzip:
+            return myzip.NameToInfo.keys()
+    except:
+        return []
+
+def secure_copy(host, username, key_filename, local_dir, remote_dir):
+    ssh_client = paramiko.SSHClient()
+    ssh_client.set_missing_host_key_policy(paramiko.client.AutoAddPolicy)
+    ssh_client.connect(host, username=username, key_filename=key_filename)
+    with closing(WriteDir(ssh_client.get_transport(), remote_dir)) as scp:
+        scp.send_dir(local_dir, preserve_times=True)
 
 
-    # Uploading the 'test' directory with its content in the
-    # '/home/user/dump' remote directory
-    scp_client.put(local_dir, recursive=True, remote_path='~')
+if __name__ == "__main__":
+    # extract_files()
+    l = list_files()
+    secure_copy(host='18.218.6.215',
+                username='ec2-user',
+                key_filename='/Users/matthias.funke/.ssh/PSPersonMachines.pem',
+                local_dir=u"media/image_bank/", remote_dir="/data/site_data/media/image_bank/")
 
-    scp_client.close()
-    client.close()

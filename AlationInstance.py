@@ -11,11 +11,13 @@ from alationutil import log_me
 from pandas.io.json import json_normalize
 from os import walk
 from os.path import basename
+from secure_copy import list_files
 
 import errno
 import os
 from Article import Article
 from query import *
+import zipfile
 
 class AlationInstance():
     def __init__(self, host, email, password, verify=True):
@@ -105,6 +107,32 @@ class AlationInstance():
             except:
                 break
         return articles
+
+    def getTables(self, ds_id=1, limit=100):
+        log_me("Getting Tables from Instance")
+        url = self.host + "/api/table/"
+        skip = 0
+        tables = pd.DataFrame()
+        params = dict(ds_id=ds_id)
+        while True:
+            try:
+                params['limit'] = limit
+                params['skip'] = skip
+                t0 = time.time()
+                r = requests.get(url, headers=self.headers, verify=self.verify, params=params)
+                skip = skip + limit
+                # create the DataFrame and index it properly
+                table_chunk = pd.DataFrame(json.loads(r.content))
+                table_chunk.index = table_chunk.id
+                tables = tables.append(table_chunk)
+                size = table_chunk.shape[0]
+                log_me("Took {} secs for {} items".format(time.time()-t0, size))
+                if size < limit: # not enough articles to continue
+                    break
+            except:
+                break
+        return tables
+
     def getArticleByID(self, id):
         url = self.host + "/integration/v1/article/" + str(id) + "/"
         r = requests.get(url, headers=self.headers, verify=self.verify)
@@ -166,7 +194,7 @@ class AlationInstance():
 
     def add_customfields_to_template(self, template_id, field_ids): #takes a list of fields
         # get details about the template first
-        log_me("Adding fields ({}) to template {}".format(field_ids, template_id))
+        #log_me("Adding fields ({}) to template {}".format(field_ids, template_id))
         r = requests.get(self.host + "/ajax/custom_template/" + str(template_id) + "/",
                          headers=self.headers, verify=self.verify)
 
@@ -363,33 +391,26 @@ class AlationInstance():
         params = dict(limit=1000, datasource_id=ds_id, saved=True, published=True)
         r = requests.get(url, headers=self.headers, verify=self.verify, params=params)
         queries = pd.DataFrame(json.loads(r.content))
-        queries = queries.loc[:, [u'title', u'description', u'published_content']]
+        queries = queries.loc[:, [u'id', u'title', u'description', u'published_content']]
+        queries.index = queries.id
         return queries.sort_index()
-
-    def putQueries_alt(self, ds_id, queries):
-        # -- just in case, grab an API token as well
-        token = u'...'
-        log_me(u"Putting queries")
-        url = self.host + u"/integration/v1/query/"
-        for single_query in queries.itertuples():
-            body={}
-            body[u'content'] = u'-- Title: ' + single_query.title + u'\n' + single_query.published_content
-            body[u'datasource_id'] = ds_id
-            r = requests.post(url, headers=dict(token=token), verify=self.verify, json=body)
 
     def putQueries(self, ds_id, queries):
         log_me(u"Putting queries")
         url = self.host + u"/api/query/"
         for single_query in queries.itertuples():
-            log_me(single_query.title)
+            #log_me(single_query.title)
             body={}
             body[u'content'] = single_query.published_content
+            body[u'published_content'] = single_query.published_content
             body[u'ds_id'] = ds_id
             body[u'title'] = single_query.title
-            body[u'description'] = single_query.description
-            # body[u'published'] = True
+            if not single_query.description:
+                body[u'description'] = u" ... "
+            else:
+                body[u'description'] = single_query.description
+            body[u'published'] = True
             r = requests.post(url, headers=self.headers, verify=self.verify, json=body)
-            h = generate_html(single_query)
 
     def getUsers(self):
         log_me("Getting users")
@@ -409,10 +430,8 @@ class AlationInstance():
                 raise
 
     def getMediaFile(self, media_set, dir):
-        # create the download directory if it doesn't exist already
-        self.mkdir_p(dir+'/media/image_bank')
-        # get a list of existing files
-        (_, _, existing_files) = walk(dir+'/media/image_bank').next()
+        # Get a list of files already contained in the local ZIP file
+        existing_files = list_files()
         for filename in media_set:
             try:
                 #log_me(filename)
@@ -424,15 +443,18 @@ class AlationInstance():
                 # sometimes we get Error 403 (unauth.), no problem
                 url = filename
                 filename = urlparse(filename).path
-            if basename(filename) in existing_files:
-                #log_me(u"Good news - no need to download {}".format(filename))
+            if filename in existing_files:
+                # log_me(u"Good news - no need to download {}".format(filename))
                 pass
             else:
                 log_me(u"Downloading and saving {}".format(url))
                 r = requests.get(url, headers=self.headers, verify=self.verify)
                 if r.status_code != 200:
                     raise Exception(r.text)
-                open(dir + filename, 'wb').write(r.content)
+                # open(dir + filename, 'wb').write(r.content)
+                with zipfile.ZipFile('ABOK_media_files.zip', 'a') as myzip:
+                    myzip.writestr(filename, r.content)
+                existing_files.append(filename)
 
     def fix_children(self, source_articles):
         # Let's read all articles again so we get the IDs, too.
@@ -464,33 +486,40 @@ class AlationInstance():
                 new_article = dict(body=target_parent.loc[target_parent_id, u'body'], title=t, children=
                                    [dict(id=new_child, otype="article") for new_child in new_children]
                                    ) # only the required fields...
-                log_me(u"Updating article {}:{}->{}".format(id, t, new_children))
+                #log_me(u"Updating article {}:{}->{}".format(id, t, new_children))
                 updated_art = self.updateArticle(target_parent_id, new_article)
 
 
-    def fix_refs(self):
-        log_me("Pass 2: Getting all Articles on Target")
+    def fix_refs(self, ds_id):
+        log_me("Pass 2: Getting all Articles, Queries, and AA Tables on Target")
+        # Get a handle on all the articles on the source instance
         articles = self.getArticles()
+        queries = self.getQueries(ds_id=ds_id)
+        tables = self.getTables(ds_id=ds_id)
+        # Initialise them as not updated
         articles['updated'] = False
-        titles = articles.title
-
+        # Go through all the articles which may contain references
         for a in articles.itertuples():
+            # Store a few attributes of the current article
             t = a.title
             id = a.id
+            # Store the HTML of the body
             soup = BeautifulSoup(a.body, "html5lib")
             update_needed = False
-            # Find all Anchors
+            # Find all Anchors = Hyperlinks
             match = soup.findAll('a')
+            # Go through all the hyperlinks to update them
             for m in match:
                 # We only care about Alation anchors, identified by the attr data-oid
                 if 'data-oid' in m.attrs:
+                    # Store title, oid, and otype of the current hyperlink
                     oid = m['data-oid']
                     otype = m['data-otype']
                     if 'title' in m.attrs:
                         title = m['title']
                     else:
                         title = m.get_text()
-                    # For the moment, we only implement references to Articles
+                    # Process links to articles
                     if otype == 'article':
                         art_match = articles.title==title
                         if art_match.any():
@@ -508,12 +537,48 @@ class AlationInstance():
                                 articles.at[id, 'body'] = soup.prettify()  # update the article body
                                 articles.at[id, 'updated'] = True  # update the article body
                                 update_needed = True
+                                # log_me(u"Article match for {} -> {}/{}".format(t, title, oid))
 
                         else:
-                            log_me("No match for {}".format(title))
+                            log_me("No article match for {}->{}".format(t, title))
+                    # Process links to queries
+                    elif otype == 'query':
+                        q_match = queries.title == title
+                        if q_match.any():
+                            matching_queries = queries[q_match]
+                            if matching_queries.shape[0] == 0:
+                                log_me("No match for {}".format(title))
+                            else:
+                                # m is a reference to somewhere and we need to fix it.
+                                oid = (matching_queries.iloc[-1]).id
+                                m['data-oid'] = oid
+                                m['href'] = "/{}/{}/".format(otype, oid)
+
+                                articles.at[id, 'body'] = soup.prettify()  # update the article body
+                                articles.at[id, 'updated'] = True  # update the article body
+                                update_needed = True
+
+                        else:
+                            log_me("No query match for {}->{}".format(t, title))
+                    elif otype == 'table':
+                        qual_name = title.split()[0]
+                        match = tables.qualified_name == qual_name
+                        if match.any():
+                            matching = tables[match]
+                            if matching.shape[0] == 0:
+                                log_me("No match for {}".format(title))
+                            else:
+                                # m is a reference to somewhere and we need to fix it.
+                                oid = (matching.iloc[-1]).id
+                                m['data-oid'] = oid
+                                m['href'] = "/{}/{}/".format(otype, oid)
+
+                                articles.at[id, 'body'] = soup.prettify()  # update the article body
+                                articles.at[id, 'updated'] = True  # update the article body
+                                update_needed = True
             if update_needed:
                 new_article = dict(body=articles.at[id, 'body'], title=t)  # only the required fields...
-                log_me(u"Updating article {}:{}->{}".format(id, t, title))
+                #log_me(u"Updating article {}:{}->{}".format(id, t, title))
                 try:
                     updated_art = self.updateArticle(id, new_article)
                     #log_me(updated_art)
