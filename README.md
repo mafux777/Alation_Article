@@ -20,14 +20,11 @@ One of the main complexities of this code is to re-calculate references from the
 
 Known issues:
 
-* You can save to CSV, but not yet read from CSV
 * You cannot migrate Articles without a custom template
 * If a custom field with the same name but different options exists on the target instance,
 the code will most likely fail
 * References from custom fields (e.g. object sets) are not re-calculated
-* In-line graphics will download to a local drive, but not be migrated to the new host automatically. Use scp.
-* Media files get saved locally into an existing directory. You still need 
-to copy them to the target instance and change owner to alation:alation.
+* In-line graphics will download to a local drive, but to use secure_copy you need a .pem file
 
 The media files are typically located at /data/site_data/media/image_bank/
 The directory only gets created once you create the first in line image in an article,
