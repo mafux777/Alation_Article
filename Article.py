@@ -142,6 +142,7 @@ class Article():
         # First pass: create a DataFrame of target articles with
         # New articles that are being migrated or referenced
         # All references to articles "zero-ed out" - will be re-calculated in Second Pass
+        # The title gets saved in the title attribute of the anchor (safer)
         for a in self.article.itertuples():
             soup = BeautifulSoup(a.body, "html5lib")
             # Find all Anchors
@@ -151,31 +152,28 @@ class Article():
                 if 'data-oid' in m.attrs:
                     oid=m['data-oid']
                     otype=m['data-otype']
-                    # For the moment, we only implement references to Articles
                     if otype=='article':
                         try:
                             actual_title = self.article.at[int(oid), 'title']
                         except:
-                            log_me("Warning! Ref to article not found {}->{}".format(a.title, m))
+                            log_me(u"Warning! Ref to article not found {}->{}".format(a.title, m))
                             actual_title=m.get_text()
                         m.string = actual_title
                         m['data-oid'] = 0
                         del m['href']
                         m['title'] = actual_title
                         self.article.at[a.Index, 'body'] = soup.prettify() # update the article body
-                    # elif otype=='query':
-                    #     m['data-oid'] = 0
-                    #     del m['href']
-                    #     m['title'] = m.get_text()
-                    #     self.article.at[a.Index, 'body'] = soup.prettify() # update the article body
                     else:
-                        log_me(m)
+                        #log_me(m)
                         m['data-oid'] = 0
                         del m['href']
                         m['title'] = m.get_text()
                         self.article.at[a.Index, 'body'] = soup.prettify() # update the article body
                 else:
-                    log_me(u"External link: {} -> {}".format(a.id, m))
+                    try:
+                        log_me(u"External link: {} -> {}".format(a.id, m))
+                    except:
+                        log_me(u"Formatting issue {}".format(a.id))
 
 
     def get_files(self):
@@ -184,16 +182,16 @@ class Article():
         src = [i['src'] for i in images]
         return set(src)
 
-    def get_files_old(self):
-        match = self.article.body.apply(lambda x: re.findall(
-            '<img class=\"([/a-z -_0-9]*)\" +src=\"([/a-z -_0-9]*)\" +style=\"width: ([/a-z -_0-9]*)\">', x, flags=0))
-        unique_list_files = set()
-        for i, m in match.iteritems():
-            for n in m:
-                relative_url = n[1].replace("https://abok.alationproserv.com", "") # n[1] previously
-                #log_me("{}:{}".format(i, relative_url))
-                unique_list_files.add(relative_url)
-        return unique_list_files
+    # def get_files_old(self):
+    #     match = self.article.body.apply(lambda x: re.findall(
+    #         '<img class=\"([/a-z -_0-9]*)\" +src=\"([/a-z -_0-9]*)\" +style=\"width: ([/a-z -_0-9]*)\">', x, flags=0))
+    #     unique_list_files = set()
+    #     for i, m in match.iteritems():
+    #         for n in m:
+    #             relative_url = n[1].replace("https://abok.alationproserv.com", "") # n[1] previously
+    #             #log_me("{}:{}".format(i, relative_url))
+    #             unique_list_files.add(relative_url)
+    #     return unique_list_files
 
 
     def get_article_by_name(self, name):

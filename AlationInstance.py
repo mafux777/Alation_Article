@@ -1,16 +1,9 @@
-import json
-import sys
-import time
 
 import pandas as pd
-import requests
 from urllib2 import urlopen
 from urlparse import urlparse
 
 from alationutil import log_me
-from pandas.io.json import json_normalize
-from os import walk
-from os.path import basename
 from secure_copy import list_files
 
 import errno
@@ -18,6 +11,8 @@ import os
 from Article import Article
 from query import *
 import zipfile
+from collections import OrderedDict, deque, defaultdict
+from types import *
 
 class AlationInstance():
     def __init__(self, host, email, password, verify=True):
@@ -28,6 +23,9 @@ class AlationInstance():
         self.existing_fields = self.getCustomFields() # store existing custom fields
         log_me("Getting existing templates")
         self.existing_templates = self.getTemplates() # store existing templates
+        self.ds = self.getDataSources()
+        self.api_fields = []
+        log_me(self.ds.loc[ : , ['id', 'title']].head(10))
 
     def login(self, email, password):
         URL = self.host + '/login/'
@@ -159,8 +157,9 @@ class AlationInstance():
         params = dict(format='json')
         r = requests.get(url, headers=self.headers, verify=self.verify, params=params)
         r_parsed = json.loads(r.content)
-        #dd = pd.DataFrame(r_parsed)
-        return r_parsed
+        dd = pd.DataFrame(r_parsed[1:]) # skipping first row, no key
+        dd.index = dd.key
+        return dd.loc[:, ['key', 'title', 'description']]
 
     def getTemplates(self):
         url = self.host + "/integration/v1/custom_template/"
@@ -279,6 +278,8 @@ class AlationInstance():
             if len(field_exists)==0:
                 log_me("Putting custom field {}".format(custom_f['name_singular']))
                 if custom_f['options']:
+                    if isinstance(custom_f['options'], str): # came from CSV
+                        custom_f['options'] = custom_f['options'].split(",")
                     custom_f['options'] = json.dumps(
                     [{"title": option, "tooltip_text": None, "old_index": None, "article_id": None} \
                      for option in custom_f['options']])
@@ -388,29 +389,44 @@ class AlationInstance():
     def getQueries(self, ds_id):
         log_me(u"Getting queries")
         url = self.host + u"/api/query/"
-        params = dict(limit=1000, datasource_id=ds_id, saved=True, published=True)
+        params = dict(limit=1000, saved=True, published=True)
         r = requests.get(url, headers=self.headers, verify=self.verify, params=params)
         queries = pd.DataFrame(json.loads(r.content))
-        queries = queries.loc[:, [u'id', u'title', u'description', u'published_content']]
+        queries = queries.loc[:, [u'id', u'title', u'description', u'published_content', u'ds']]
         queries.index = queries.id
         return queries.sort_index()
 
     def putQueries(self, ds_id, queries):
+        log_me(u"Getting existing queries to avoid duplicates")
+        ex_queries = self.getQueries(ds_id=0)
+
         log_me(u"Putting queries")
         url = self.host + u"/api/query/"
         for single_query in queries.itertuples():
             #log_me(single_query.title)
-            body={}
-            body[u'content'] = single_query.published_content
-            body[u'published_content'] = single_query.published_content
-            body[u'ds_id'] = ds_id
-            body[u'title'] = single_query.title
-            if not single_query.description:
-                body[u'description'] = u" ... "
+            ori_ds_id = single_query.ds['id']
+            ori_ds_title = single_query.ds['title']
+            match = single_query.title==ex_queries.title
+            if match.any():
+                log_me(u"{} exists, skipping for now".format(single_query.title))
             else:
-                body[u'description'] = single_query.description
-            body[u'published'] = True
-            r = requests.post(url, headers=self.headers, verify=self.verify, json=body)
+                body={}
+                body[u'content'] = single_query.published_content
+                body[u'published_content'] = single_query.published_content
+                if ori_ds_id==1:
+                    body[u'ds_id'] = 1
+                elif ori_ds_id==10:
+                    body[u'ds_id'] = 2 # this should be the DS for Employee Data
+                else:
+                    log_me(u"Not sure what to do...{}".format(single_query.title))
+                body[u'title'] = single_query.title
+                if not single_query.description:
+                    body[u'description'] = u" ... "
+                else:
+                    body[u'description'] = single_query.description
+                body[u'published'] = True
+                r = requests.post(url, headers=self.headers, verify=self.verify, json=body)
+                #log_me(json.loads(r.content))
 
     def getUsers(self):
         log_me("Getting users")
@@ -418,6 +434,13 @@ class AlationInstance():
         r = requests.get(url, headers=self.headers, verify=self.verify)
         users = pd.DataFrame(json.loads(r.content))
         return users
+
+    def getDataSources(self):
+        log_me("Getting data sources")
+        url = self.host + "/ajax/datasource/"
+        r = requests.get(url, headers=self.headers, verify=self.verify)
+        ds = pd.DataFrame(json.loads(r.content))
+        return ds
 
 
     def mkdir_p(self, path):
@@ -429,7 +452,7 @@ class AlationInstance():
             else:
                 raise
 
-    def getMediaFile(self, media_set, dir):
+    def getMediaFile(self, media_set):
         # Get a list of files already contained in the local ZIP file
         existing_files = list_files()
         for filename in media_set:
@@ -470,7 +493,7 @@ class AlationInstance():
             target_parent = new_Article[new_Article.title==t]
             new_children = []
             if target_parent.empty:
-                log_me("Skipping to next article in the list - make sure to replicate articles first")
+                log_me(u"Skipping to next article in the list - make sure to replicate articles first")
             else:
                 target_parent_id = int(target_parent[u'id'])
                 for child in children:
@@ -479,7 +502,7 @@ class AlationInstance():
                     # On target machine
                     target_child = new_Article[new_Article.title==child_title]
                     if target_child.empty:
-                        log_me("No target child: ".format(child_title))
+                        log_me(u"No target child: ".format(child_title))
                     else:
                         target_child_id = target_child.iloc[0, :]['id']
                         new_children.append(target_child_id)
@@ -491,7 +514,7 @@ class AlationInstance():
 
 
     def fix_refs(self, ds_id):
-        log_me("Pass 2: Getting all Articles, Queries, and AA Tables on Target")
+        log_me(u"Pass 2: Getting all Articles, Queries, and AA Tables on Target")
         # Get a handle on all the articles on the source instance
         articles = self.getArticles()
         queries = self.getQueries(ds_id=ds_id)
@@ -519,63 +542,50 @@ class AlationInstance():
                         title = m['title']
                     else:
                         title = m.get_text()
+                        log_me(u"{} somehow got missed in the pre-processing".format(title))
                     # Process links to articles
                     if otype == 'article':
                         art_match = articles.title==title
                         if art_match.any():
-                            matching_articles = articles[art_match]
-                            if matching_articles.shape[0] == 0:
-                                log_me("No match for {}".format(title))
-                            #elif matching_articles.shape[0] > 1:
-                            #    log_me("More than one match for {}".format(m))
-                            else:
-                                # m is a reference to somewhere and we need to fix it.
-                                oid = (matching_articles.iloc[0]).id
-                                m['data-oid'] = oid
-                                m['href'] = "/{}/{}/".format(otype, oid)
+                            # m is a reference to somewhere and we need to fix it.
+                            oid = articles.id[art_match.idxmax()]
+                            m['data-oid'] = oid
+                            m['href'] = "/{}/{}/".format(otype, oid)
 
-                                articles.at[id, 'body'] = soup.prettify()  # update the article body
-                                articles.at[id, 'updated'] = True  # update the article body
-                                update_needed = True
-                                # log_me(u"Article match for {} -> {}/{}".format(t, title, oid))
-
+                            articles.at[id, 'body'] = soup.prettify()  # update the article body
+                            articles.at[id, 'updated'] = True  # update the article body
+                            update_needed = True
+                            # log_me(u"Article match for {} -> {}/{}".format(t, title, oid))
                         else:
-                            log_me("No article match for {}->{}".format(t, title))
+                            log_me(u"No article match for {}->{}".format(t, title))
                     # Process links to queries
                     elif otype == 'query':
                         q_match = queries.title == title
                         if q_match.any():
                             matching_queries = queries[q_match]
-                            if matching_queries.shape[0] == 0:
-                                log_me("No match for {}".format(title))
-                            else:
-                                # m is a reference to somewhere and we need to fix it.
-                                oid = (matching_queries.iloc[-1]).id
-                                m['data-oid'] = oid
-                                m['href'] = "/{}/{}/".format(otype, oid)
-
-                                articles.at[id, 'body'] = soup.prettify()  # update the article body
-                                articles.at[id, 'updated'] = True  # update the article body
-                                update_needed = True
-
+                            # m is a reference to somewhere and we need to fix it.
+                            oid = (matching_queries.iloc[-1]).id # -1 means last
+                            m['data-oid'] = oid
+                            m['href'] = "/{}/{}/".format(otype, oid)
+                            articles.at[id, 'body'] = soup.prettify()  # update the article body
+                            articles.at[id, 'updated'] = True  # update the article body
+                            update_needed = True
                         else:
-                            log_me("No query match for {}->{}".format(t, title))
+                            log_me(u"No query match for {}->{}".format(t, title))
                     elif otype == 'table':
                         qual_name = title.split()[0]
                         match = tables.qualified_name == qual_name
                         if match.any():
-                            matching = tables[match]
-                            if matching.shape[0] == 0:
-                                log_me("No match for {}".format(title))
-                            else:
-                                # m is a reference to somewhere and we need to fix it.
-                                oid = (matching.iloc[-1]).id
-                                m['data-oid'] = oid
-                                m['href'] = "/{}/{}/".format(otype, oid)
+                            # m is a reference to somewhere and we need to fix it.
+                            oid = tables.id[match.idxmax()]
+                            m['data-oid'] = oid
+                            m['href'] = "/{}/{}/".format(otype, oid)
 
-                                articles.at[id, 'body'] = soup.prettify()  # update the article body
-                                articles.at[id, 'updated'] = True  # update the article body
-                                update_needed = True
+                            articles.at[id, 'body'] = soup.prettify()  # update the article body
+                            articles.at[id, 'updated'] = True  # update the article body
+                            update_needed = True
+                        else:
+                            log_me(u"No match for {}".format(title))
             if update_needed:
                 new_article = dict(body=articles.at[id, 'body'], title=t)  # only the required fields...
                 #log_me(u"Updating article {}:{}->{}".format(id, t, title))
@@ -583,4 +593,251 @@ class AlationInstance():
                     updated_art = self.updateArticle(id, new_article)
                     #log_me(updated_art)
                 except:
-                    log_me("UNSUCCESSFUL: {}/{}".format(id, new_article))
+                    log_me(u"UNSUCCESSFUL: {}/{}".format(id, new_article))
+
+    def upload_dd(self, filename, ds_id):
+        dd = pd.read_csv(filename)
+        dd = dd.loc[:, ['key', 'title', 'description']]
+        dd['key'] = u"1." + dd['key']
+        body = ""
+        for id, obj in dd.iterrows():
+            r = dict(obj)
+            body = body + json.dumps(r) + '\n'
+        log_me("Uploading data dictionary")
+        # Template name needs to be part of the URL
+        bulk = "/api/v1/bulk_metadata/custom_fields/"
+        template_name = 'default'
+        url = self.host + bulk + template_name + "/mixed"
+        params=dict(replace_values = True, create_new = True)
+        try:
+            r = requests.post(url, data=body, headers=self.headers, params=params, verify=self.verify)
+            if r.status_code != 200:
+                raise Exception(r.text)
+            return r
+        except IOError as e:
+            log_me("I/O error({0}): {1}".format(e.errno, e.strerror))
+        except ValueError:
+            log_me("Could not convert data to an integer.")
+        except:
+            log_me("Unexpected error:", sys.exc_info()[0])
+            raise
+        log_me("OK")
+
+    def upload_dd_2(self, dd, ds_id=0, ds_title=u""):
+        body = ""
+        if not ds_id:
+            # look up id of the data source by title
+            match = self.ds.title.eq(ds_title)
+            if match.any():
+                ds_id = self.ds.id[match.idxmax()]
+            else:
+                log_me(u"WARNING - No Data Source found for DD upload")
+
+        for id, obj in dd.iterrows():
+            obj['key'] = "{}.{}".format(int(ds_id), obj['key'])
+            r = dict(obj)
+            body = body + json.dumps(r) + '\n'
+        log_me("Uploading data dictionary")
+        # Template name needs to be part of the URL
+        bulk = "/api/v1/bulk_metadata/custom_fields/"
+        template_name = 'default'
+        url = self.host + bulk + template_name + "/mixed"
+        params=dict(replace_values = True, create_new = True)
+        try:
+            r = requests.post(url, data=body, headers=self.headers, params=params, verify=self.verify)
+            if r.status_code != 200:
+                raise Exception(r.text)
+            return r
+        except IOError as e:
+            log_me("I/O error({0}): {1}".format(e.errno, e.strerror))
+        except ValueError:
+            log_me("Could not convert data to an integer.")
+        except:
+            log_me("Unexpected error: {}".format(sys.exc_info()[0]))
+            raise
+
+    # This method gets all API resources in a DataFrame
+    # The information is limited, so this is only a helper function for
+    # entire_api
+    def get_api_resource_all(self):
+        api = "/integration/v1/api_resource/"
+        url = self.host + api
+        try:
+            r = requests.get(url, headers=self.headers, verify=self.verify)
+            if r.status_code != 200:
+                raise Exception(r.text)
+            fields = pd.DataFrame(json.loads(r.content))
+            fields.index = fields.id
+            return fields.sort_index()
+        except IOError as e:
+            log_me(u"I/O error({0}): {1}".format(e.errno, e.strerror))
+        except ValueError:
+            log_me(u"Could not convert data to an integer.")
+        except:
+            log_me(u"Unexpected error: {}".format(sys.exc_info()[0]))
+            raise
+
+    # This method untangles the dictionary with the resource fields
+    # The result is a flattened list of dictionaries, which can be
+    # used to create a DataFrame
+    def recursive_field(self, list_so_far, field):
+        next_element = field.pop() # this reduces the input
+        if "children" in next_element:
+            for c in next_element['children']:
+                field.append(c)
+            del next_element['children']
+            list_so_far.append(next_element)
+        else:
+            list_so_far.append(next_element)
+        if len(field)==0:
+            return list_so_far # finished
+        return self.recursive_field(list_so_far, field)
+
+    # This recursive function is designed to encode an existing dictionary coming from get_api_resource
+    # and convert it into the format that post_api_resource expects
+    def recursive_field_encode(self, field):
+        if "children" in field:
+            if field['type']=='object':
+                # add a key for each child
+                # the key is key
+                d = dict(type='object', properties=dict())
+                for c in field['children']:
+                    g = self.recursive_field_encode(field=c)
+                    k = g.keys()
+                    v = g.values()
+                    d["properties"][g.keys()[0]] = g.values()[0]
+                return {field['key']: d}
+            elif field['type']=='array':
+                d = dict(type='array', items=dict())
+                d['items'] = dict(properties=dict())
+                # in the case of an array, skip the Array Item itself
+                for c in field['children'][0]['children']:
+                    p = self.recursive_field_encode(field=c)
+                    k = p.keys()
+                    v = p.values()
+                    d["items"]["properties"][k[0]] = v[0]
+                return {field['key']: d}
+            else:
+                print("++++++ATTENTION+++++++")
+        else:
+            e = dict()
+            if field['examples']:
+                e['type'] = field['type']
+                e['examples'] = [field['examples']]
+            else:
+                e['type'] = field['type']
+            return {field['key'] : e}
+
+
+    # This method gets one specific API resource and all the details
+    # It returns a tuple
+    # First variable in the tuple is the entire Dictionary
+    # The second variable gets a DataFrame with the Resource Fields only
+    def get_api_resource(self, id):
+        api = "/integration/v1/api_resource/{}/".format(id)
+        url = self.host + api
+        api_fields = pd.DataFrame()
+        # params=dict(replace_values = True, create_new = True)
+        try:
+            r = requests.get(url, headers=self.headers, verify=self.verify)
+            if r.status_code != 200:
+                raise Exception(r.text)
+            a = json.loads(r.content)
+            if a['input_schema']:
+                input_schema = a['input_schema']
+                in_fields = self.recursive_field([], deque(input_schema))
+                in_fields = pd.DataFrame(in_fields)
+                in_fields['source'] = 'input'
+                api_fields = pd.DataFrame(in_fields)
+            if a['output_schema']:
+                output_schema = a['output_schema']
+                out_fields = self.recursive_field([], deque(output_schema))
+                out_fields = pd.DataFrame(out_fields)
+                out_fields['source'] = 'output'
+                api_fields = api_fields.append(out_fields)
+
+            api_fields.index = api_fields.id
+            return json.loads(r.content), api_fields.sort_index()
+        except IOError as e:
+            log_me(u"I/O error({0}): {1}".format(e.errno, e.strerror))
+        except ValueError:
+            log_me(u"Could not convert data to an integer.")
+        except:
+            log_me(u"Unexpected error: {}".format(sys.exc_info()[0]))
+            raise
+
+    # This method updates the logical metadata of all resources fields passed in a DataFrame
+    def update_api_resource_field(self, resource_field):
+        api = "/api/v1/bulk_metadata/custom_fields/default/api_resource_field"
+        url = self.host + api
+        body = str()
+        params=dict(replace_values = True, create_new = False)
+        for id, obj in resource_field.iterrows():
+            r = dict(obj)
+            t = {}
+            t['title'] = r['title']
+            t['description'] = r['description']
+            t['key'] = r['id']
+            body = body + json.dumps(t) + '\n'
+
+        try:
+            r = requests.post(url, headers=self.headers, verify=self.verify, data=body, params=params)
+            if r.status_code != 200:
+                raise Exception(r.text)
+        except IOError as e:
+            log_me(u"I/O error({0}): {1}".format(e.errno, e.strerror))
+        except ValueError:
+            log_me(u"Could not convert data to an integer.")
+        except:
+            log_me(u"Unexpected error: {}".format(sys.exc_info()[0]))
+            raise
+
+    # This method return a DataFrame with all the existing API Resources on the instance
+    # Each field where isfolder=False can be used to construct a new API resource
+    # But the input and output need to be re-ordered
+    def entire_api(self):
+        all_apis = self.get_api_resource_all()
+        all_apis = all_apis[all_apis.is_folder.eq(False)]
+        list_of_apis = []
+
+        for api in all_apis.itertuples():
+            api, f = self.get_api_resource(api.Index)
+            list_of_apis.append(api)
+        all_apis_detailed = pd.DataFrame(list_of_apis)
+        all_apis_detailed.index =  all_apis_detailed.id
+        return all_apis_detailed
+
+    # This method creates a new api_resource
+    # You have to pass a dictionary with the keys:
+    # - request_type
+    # - resource_url
+    # - path
+    # - request_type
+    # - output_schema
+    # - input_schema
+    # It's been tested with existing API Resources (migrations)
+
+    def post_api_resource(self, api_resource):
+        # /integration/v1/api_resource/<HTTP_method>:<url>/
+        req_type = api_resource['request_type']
+        req_url = api_resource['resource_url']
+        req_path = api_resource['path']
+        url = self.host + "/integration/v1/api_resource/" + req_type + ":" + req_url + "/"
+
+        payload = dict(path=req_path,
+                       response_type=api_resource['request_type'],
+                       output_schema=api_resource['output_schema'],
+                       input_schema = api_resource['input_schema']
+        )
+        try:
+            r = requests.post(url, json=payload, headers=self.headers, verify=self.verify)
+            if r.status_code != 200:
+                raise Exception(r.text)
+            return r
+        except IOError as e:
+            log_me("I/O error({0}): {1}".format(e.errno, e.strerror))
+        except ValueError:
+            log_me("Could not convert data to an integer.")
+        except:
+            log_me("Unexpected error:", sys.exc_info()[0])
+            raise

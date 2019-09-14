@@ -2,14 +2,10 @@ import base64
 import paramiko
 
 #from scp import SCPClient
-from pip._vendor import progress
 from scpclient import WriteDir, Write
 from contextlib import *
-import sys
 
 from zipfile import ZipFile
-
-
 
 def extract_files():
     with closing(ZipFile('ABOK_media_files.zip', 'r')) as myzip:
@@ -29,12 +25,11 @@ def secure_copy(host, username, key_filename, local_dir, remote_dir):
     with closing(WriteDir(ssh_client.get_transport(), remote_dir)) as scp:
         scp.send_dir(local_dir, preserve_times=True)
 
-
 if __name__ == "__main__":
     # extract_files()
     l = list_files()
     secure_copy(host='18.218.6.215',
                 username='ec2-user',
                 key_filename='/Users/matthias.funke/.ssh/PSPersonMachines.pem',
-                local_dir=u"media/image_bank/", remote_dir="/data/site_data/media/image_bank/")
+                local_dir=u"media/image_bank/", remote_dir="/mnt/data/site_data/media/image_bank/")
 
