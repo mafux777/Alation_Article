@@ -13,6 +13,7 @@ from query import *
 import zipfile
 from collections import OrderedDict, deque, defaultdict
 from types import *
+from math import isnan
 
 class AlationInstance():
     def __init__(self, host, email, password, verify=True):
@@ -366,11 +367,11 @@ class AlationInstance():
                 raise Exception(r.text)
             return r
         except IOError as e:
-            log_me("I/O error({0}): {1}".format(e.errno, e.strerror))
+            log_me(u"I/O error({0}): {1}".format(e.errno, e.strerror))
         except ValueError:
-            log_me("Could not convert data to an integer.")
+            log_me(u"Could not convert data to an integer.")
         except:
-            log_me("Unexpected error:", sys.exc_info()[0])
+            log_me(u"Unexpected error:".format(sys.exc_info()[0]))
             raise
 
 
@@ -693,6 +694,15 @@ class AlationInstance():
             return list_so_far # finished
         return self.recursive_field(list_so_far, field)
 
+    # def extract_logical(self, api_dict):
+    #     if "properties" in api_dict: # like children
+    #         [self.extract_logical(p) for p in api_dict['properties']]
+    #     else: # at the end of the tree...
+    #         return dict(key=api_dict['key'],
+    #                    title=api_dict['title'],
+    #                    description=api_dict['description'])
+
+
     # This recursive function is designed to encode an existing dictionary coming from get_api_resource
     # and convert it into the format that post_api_resource expects
     def recursive_field_encode(self, field):
@@ -702,11 +712,11 @@ class AlationInstance():
                 # the key is key
                 d = dict(type='object', properties=dict())
                 for c in field['children']:
-                    g = self.recursive_field_encode(field=c)
+                    g = self.recursive_field_encode(field=c)    # <--- recursive call!
                     k = g.keys()
                     v = g.values()
-                    d["properties"][g.keys()[0]] = g.values()[0]
-                return {field['key']: d}
+                    d["properties"][g.keys()[0]] = g.values()[0] # <---- aggregating the children into one dict
+                return {field['key']: d} # <---- this is likely to be the final return
             elif field['type']=='array':
                 d = dict(type='array', items=dict())
                 d['items'] = dict(properties=dict())
@@ -718,8 +728,8 @@ class AlationInstance():
                     d["items"]["properties"][k[0]] = v[0]
                 return {field['key']: d}
             else:
-                print("++++++ATTENTION+++++++")
-        else:
+                log_me("Unexpected field type {}".format(field))
+        else: # this branch returns a leaf outside
             e = dict()
             if field['examples']:
                 e['type'] = field['type']
@@ -730,10 +740,24 @@ class AlationInstance():
 
 
     # This method gets one specific API resource and all the details
-    # It returns a tuple
-    # First variable in the tuple is the entire Dictionary
-    # The second variable gets a DataFrame with the Resource Fields only
-    def get_api_resource(self, id):
+    # Just not yet in the format needed to post it back to Alation
+    def get_api_resource_1(self, id):
+        api = "/integration/v1/api_resource/{}/".format(id)
+        url = self.host + api
+        try:
+            r = requests.get(url, headers=self.headers, verify=self.verify)
+            if r.status_code != 200:
+                raise Exception(r.text)
+            return json.loads(r.content)
+        except IOError as e:
+            log_me(u"I/O error({0}): {1}".format(e.errno, e.strerror))
+        except ValueError:
+            log_me(u"Could not convert data to an integer.")
+        except:
+            log_me(u"Unexpected error: {}".format(sys.exc_info()[0]))
+            raise
+    # This method gets a DataFrame with the Resource Fields only for one specific API resource
+    def get_api_resource_2(self, id):
         api = "/integration/v1/api_resource/{}/".format(id)
         url = self.host + api
         api_fields = pd.DataFrame()
@@ -757,7 +781,7 @@ class AlationInstance():
                 api_fields = api_fields.append(out_fields)
 
             api_fields.index = api_fields.id
-            return json.loads(r.content), api_fields.sort_index()
+            return api_fields.sort_index()
         except IOError as e:
             log_me(u"I/O error({0}): {1}".format(e.errno, e.strerror))
         except ValueError:
@@ -765,25 +789,67 @@ class AlationInstance():
         except:
             log_me(u"Unexpected error: {}".format(sys.exc_info()[0]))
             raise
+    # a utility function to create a list of items and fix list in list
+    def flatten(self, l, ltypes=(list, tuple)):
+        ltype = type(l)
+        l = list(l)
+        i = 0
+        while i < len(l):
+            while isinstance(l[i], ltypes):
+                if not l[i]:
+                    l.pop(i)
+                    i -= 1
+                    break
+                else:
+                    l[i:i + 1] = l[i]
+            i += 1
+        return ltype(l)
+
+    # A method to extract the logical metadata for use with the bulk API later
+    def extract_logical(self, api_dict):
+        if "properties" in api_dict:  # like children
+            l = []
+            for k, v in api_dict['properties'].iteritems():
+                v['key'] = k
+                l.append(self.extract_logical(v))
+            return l
+        if "items" in api_dict:
+            return self.extract_logical(api_dict['items'])
+        else:  # at the end of the tree...
+            return api_dict
+
+    # a utility method to detect 'nan' which can appear in a pandas DataFrame when the field is empty
+    def is_valid(self, t):
+        if isinstance(t, basestring):
+            return True
+        elif isinstance(t, float):
+            return not isnan(t)
+        else:
+            print ("Type warning")
+            return False
 
     # This method updates the logical metadata of all resources fields passed in a DataFrame
-    def update_api_resource_field(self, resource_field):
-        api = "/api/v1/bulk_metadata/custom_fields/default/api_resource_field"
+    def update_api_resource_field(self, resource_field, rtype="api_resource_field"):
+        api = "/api/v1/bulk_metadata/custom_fields/default/" + rtype
         url = self.host + api
         body = str()
         params=dict(replace_values = True, create_new = False)
         for id, obj in resource_field.iterrows():
             r = dict(obj)
             t = {}
-            t['title'] = r['title']
-            t['description'] = r['description']
-            t['key'] = r['id']
-            body = body + json.dumps(t) + '\n'
+            if self.is_valid(r['title']):
+                t['title'] = r['title']
+            if self.is_valid(r['description']):
+                t['description'] = r['description']
+            t['key'] = str(r['id'])
+            if len(t.keys()) > 1:
+                body = body + json.dumps(t) + '\n'
 
         try:
             r = requests.post(url, headers=self.headers, verify=self.verify, data=body, params=params)
             if r.status_code != 200:
                 raise Exception(r.text)
+            return r.text
         except IOError as e:
             log_me(u"I/O error({0}): {1}".format(e.errno, e.strerror))
         except ValueError:
@@ -815,7 +881,7 @@ class AlationInstance():
     # - request_type
     # - output_schema
     # - input_schema
-    # It's been tested with existing API Resources (migrations)
+    # It's been tested with existing API Resources (migrations) and "hard-coded"
 
     def post_api_resource(self, api_resource):
         # /integration/v1/api_resource/<HTTP_method>:<url>/
@@ -833,11 +899,26 @@ class AlationInstance():
             r = requests.post(url, json=payload, headers=self.headers, verify=self.verify)
             if r.status_code != 200:
                 raise Exception(r.text)
-            return r
+            # -- output_schema logical metadata ---
+            extracted_logical_data_raw = self.extract_logical(api_resource['output_schema'])
+            extracted_logical_data = pd.DataFrame(self.flatten(extracted_logical_data_raw))
+            resource_fields = self.get_api_resource_2(json.loads(r.text)['id'])
+            resource_fields_map = resource_fields.loc[resource_fields.source.eq('output'), ['key', 'id']]
+            merged_logical = extracted_logical_data.merge(resource_fields_map, on='key')
+            return_text = self.update_api_resource_field(merged_logical)
+
+            # -- input_schema logical metadata ---
+            extracted_logical_data_raw = self.extract_logical(api_resource['input_schema'])
+            extracted_logical_data = pd.DataFrame(self.flatten(extracted_logical_data_raw))
+            resource_fields = self.get_api_resource_2(json.loads(r.text)['id'])
+            resource_fields_map = resource_fields.loc[resource_fields.source.eq('input'), ['key', 'id']]
+            merged_logical = extracted_logical_data.merge(resource_fields_map, on='key')
+            return_text += self.update_api_resource_field(merged_logical)
+            return return_text
         except IOError as e:
             log_me("I/O error({0}): {1}".format(e.errno, e.strerror))
         except ValueError:
             log_me("Could not convert data to an integer.")
         except:
-            log_me("Unexpected error:", sys.exc_info()[0])
+            log_me("Unexpected error: {}".format(sys.exc_info()[0]))
             raise
