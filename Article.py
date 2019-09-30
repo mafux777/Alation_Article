@@ -48,6 +48,8 @@ class Article():
         else:
             self.article = article
 
+    def get_df(self):
+        return self.article
 
     # returns all articles with the desired template name (may not work for multiple templates)
     def filter(self, template):
@@ -169,11 +171,11 @@ class Article():
                         del m['href']
                         m['title'] = m.get_text()
                         self.article.at[a.Index, 'body'] = soup.prettify() # update the article body
-                else:
-                    try:
-                        log_me(u"External link: {} -> {}".format(a.id, m))
-                    except:
-                        log_me(u"Formatting issue {}".format(a.id))
+                # else:
+                #     try:
+                #         log_me(u"External link: {} -> {}".format(a.id, m))
+                #     except:
+                #         log_me(u"Formatting issue {}".format(a.id))
 
 
     def get_files(self):
@@ -226,7 +228,7 @@ class Article():
             'dpi': '300',
             'minimum-font-size': '12',
             'disable-smart-shrinking': '',
-            'header-left': u'Alation Book of Knowledge (Draft)' + now.strftime(u" %Y-%m-%d %H:%M "),
+            'header-left': u'Alation Book of Knowledge' + now.strftime(u" %Y-%m-%d %H:%M "),
             'header-line': '',
             'header-font-size': '9',
             'header-spacing': '4',

@@ -15,56 +15,31 @@ if __name__ == "__main__":
     ap.add_argument("-u", "--username",  required=True,  help="username")
     ap.add_argument("-p", "--password",  required=True,  help="password")
     ap.add_argument("-H", "--host",      required=True,  help="URL of the Alation instance")
-    ap.add_argument("-v", "--username2", required=False, help="username2")
-    ap.add_argument("-w", "--password2", required=False, help="password2")
-    ap.add_argument("-x", "--host2",     required=False, help="URL of the 2nd Alation instance")
     args = vars(ap.parse_args())
 
-    url_1    = args['host']
-    user_1   = args['username']
-    passwd_1 = args['password']
 
     desired_template = u"ABOK Article"
     pickle_file = "ABOK.gzip"
     query_file = "AA Queries.gzip"
     dd_file = "AA_dd.gzip"
 
-    # --- Log into the source instance
-    alation_1 = AlationInstance(url_1, user_1, passwd_1)
-    dd = alation_1.download_datadict(1) # Alation Analytics is 1 on ABOK
-    dd.to_pickle(dd_file)
 
     # --- Log into the target instance
-    url_2    = args['host2']
-    user_2   = args['username2']
-    passwd_2 = args['password2']
+    url_2    = args['host']
+    user_2   = args['username']
+    passwd_2 = args['password']
     target = AlationInstance(url_2, user_2, passwd_2)
 
-
-
-    log_me(u"Getting desired articles")
-    allArticles  = alation_1.getArticles(template=desired_template) # download all articles
-    allArticles.to_pickle(pickle_file)
     allArticles = pd.read_pickle(pickle_file)
     Art = Article(allArticles)                    # convert to Article class
-    queries = alation_1.getQueries(ds_id=0)
-    author = queries.author.apply(lambda x: x['id'] not in [1,5])
-    q = queries[author]
-    q.to_pickle(query_file)
-
     queries = pd.read_pickle(query_file)
 
-    query_html = generate_html(queries)
-
-
-    target.upload_dd_2(dd, 0, "Alation Analytics")
+    target.upload_dd_2(pd.read_pickle(dd_file), 0, "Alation Analytics")
 
     # First pass of fixing references
     target.putQueries(ds_id=1, queries=queries)
     Art.convert_references()
 
-    log_me(u"Getting media files via download")
-    alation_1.getMediaFile(Art.get_files())
     extract_files()
 
     # log_me(u"Securely copying media files to remote host")
@@ -74,16 +49,9 @@ if __name__ == "__main__":
     #             local_dir=u"media/image_bank/", remote_dir=u"/data/site_data/media/image_bank")
 
 
-    log_me(u"Creating PDF")
-    Art.create_pdf(first=51, additional_html=query_html)
-
-    #allTemplates = alation_1.getTemplates()          # download all templates (with their custom fields)
-    #allTemplates.to_csv("templates.csv", encoding='utf-8', index=False)
     allTemplates = pd.read_csv("templates.csv")
     # We need to have quite detailed information to create the template!
 
-    custom_fields = target.getCustomFields_from_template(desired_template) # this way we also get the template info
-    custom_fields.to_pickle("custom_fields.gzip")
     custom_fields = pd.read_pickle("custom_fields.gzip")
 
     # create a migration notes field to hold manual migration instructions

@@ -25,7 +25,6 @@ class AlationInstance():
         log_me("Getting existing templates")
         self.existing_templates = self.getTemplates() # store existing templates
         self.ds = self.getDataSources()
-        self.api_fields = []
         log_me(self.ds.loc[ : , ['id', 'title']].head(10))
 
     def login(self, email, password):
@@ -66,9 +65,12 @@ class AlationInstance():
         url = self.host + "/ajax/custom_field/"
         payload = {}
         r = requests.get(url, data=json.dumps(payload), headers=self.headers, verify=self.verify)
-        fields = pd.DataFrame(json.loads(r.content))
-        fields.index = fields.id
-        return fields.sort_index()
+        if r.status_code == 200:
+            fields = pd.DataFrame(json.loads(r.content))
+            fields.index = fields.id
+            return fields.sort_index()
+        else:
+            log_me(u"Could not get custom fields: {}".format(r.content))
 
     def getCustomFieldID(self, name):
         if name in self.existing_fields.name:
@@ -393,7 +395,7 @@ class AlationInstance():
         params = dict(limit=1000, saved=True, published=True)
         r = requests.get(url, headers=self.headers, verify=self.verify, params=params)
         queries = pd.DataFrame(json.loads(r.content))
-        queries = queries.loc[:, [u'id', u'title', u'description', u'published_content', u'ds']]
+        queries = queries.loc[:, [u'id', u'title', u'description', u'published_content', u'ds', u'author']]
         queries.index = queries.id
         return queries.sort_index()
 
@@ -409,7 +411,8 @@ class AlationInstance():
             ori_ds_title = single_query.ds['title']
             match = single_query.title==ex_queries.title
             if match.any():
-                log_me(u"{} exists, skipping for now".format(single_query.title))
+                #log_me(u"{} exists, skipping for now".format(single_query.title))
+                pass
             else:
                 body={}
                 body[u'content'] = single_query.published_content
@@ -473,12 +476,12 @@ class AlationInstance():
             else:
                 log_me(u"Downloading and saving {}".format(url))
                 r = requests.get(url, headers=self.headers, verify=self.verify)
-                if r.status_code != 200:
-                    raise Exception(r.text)
-                # open(dir + filename, 'wb').write(r.content)
-                with zipfile.ZipFile('ABOK_media_files.zip', 'a') as myzip:
-                    myzip.writestr(filename, r.content)
-                existing_files.append(filename)
+                if r.status_code == 200:
+                    with zipfile.ZipFile('ABOK_media_files.zip', 'a') as myzip:
+                        myzip.writestr(filename, r.content)
+                    existing_files.append(filename)
+                else:
+                    log_me(u"WARNING -- NO FILE {}".format(url))
 
     def fix_children(self, source_articles):
         # Let's read all articles again so we get the IDs, too.
@@ -498,15 +501,18 @@ class AlationInstance():
             else:
                 target_parent_id = int(target_parent[u'id'])
                 for child in children:
-                    child_id = child[u'id']
-                    child_title = child[u'title']
-                    # On target machine
-                    target_child = new_Article[new_Article.title==child_title]
-                    if target_child.empty:
-                        log_me(u"No target child: ".format(child_title))
-                    else:
-                        target_child_id = target_child.iloc[0, :]['id']
-                        new_children.append(target_child_id)
+                    try:
+                        child_id = child[u'id']
+                        child_title = child[u'title']
+                        # On target machine
+                        target_child = new_Article[new_Article.title==child_title]
+                        if target_child.empty:
+                            log_me(u"No target child: {}->{}".format(t, child_title))
+                        else:
+                            target_child_id = target_child.iloc[0, :]['id']
+                            new_children.append(target_child_id)
+                    except:
+                        log_me(u"Child issue: {} -> {}".format(target_parent_id, child_title))
                 new_article = dict(body=target_parent.loc[target_parent_id, u'body'], title=t, children=
                                    [dict(id=new_child, otype="article") for new_child in new_children]
                                    ) # only the required fields...
@@ -546,19 +552,22 @@ class AlationInstance():
                         log_me(u"{} somehow got missed in the pre-processing".format(title))
                     # Process links to articles
                     if otype == 'article':
-                        art_match = articles.title==title
-                        if art_match.any():
-                            # m is a reference to somewhere and we need to fix it.
-                            oid = articles.id[art_match.idxmax()]
-                            m['data-oid'] = oid
-                            m['href'] = "/{}/{}/".format(otype, oid)
+                        try:
+                            art_match = articles.title==title
+                            if art_match.any():
+                                # m is a reference to somewhere and we need to fix it.
+                                oid = articles.id[art_match.idxmax()]
+                                m['data-oid'] = oid
+                                m['href'] = "/{}/{}/".format(otype, oid)
 
-                            articles.at[id, 'body'] = soup.prettify()  # update the article body
-                            articles.at[id, 'updated'] = True  # update the article body
-                            update_needed = True
-                            # log_me(u"Article match for {} -> {}/{}".format(t, title, oid))
-                        else:
-                            log_me(u"No article match for {}->{}".format(t, title))
+                                articles.at[id, 'body'] = soup.prettify()  # update the article body
+                                articles.at[id, 'updated'] = True  # update the article body
+                                update_needed = True
+                                # log_me(u"Article match for {} -> {}/{}".format(t, title, oid))
+                            else:
+                                log_me(u"No article match for {}->{}".format(t, title))
+                        except:
+                            log_me(u"Exception trying to match {} -> {}".format(t, title))
                     # Process links to queries
                     elif otype == 'query':
                         q_match = queries.title == title
@@ -631,8 +640,10 @@ class AlationInstance():
             match = self.ds.title.eq(ds_title)
             if match.any():
                 ds_id = self.ds.id[match.idxmax()]
+                log_me(u"Data Dictionary Upload for {}/{}".format(ds_id, ds_title))
             else:
                 log_me(u"WARNING - No Data Source found for DD upload")
+                return
 
         for id, obj in dd.iterrows():
             obj['key'] = "{}.{}".format(int(ds_id), obj['key'])
@@ -643,7 +654,7 @@ class AlationInstance():
         bulk = "/api/v1/bulk_metadata/custom_fields/"
         template_name = 'default'
         url = self.host + bulk + template_name + "/mixed"
-        params=dict(replace_values = True, create_new = True)
+        params=dict(replace_values=True, create_new=True)
         try:
             r = requests.post(url, data=body, headers=self.headers, params=params, verify=self.verify)
             if r.status_code != 200:
