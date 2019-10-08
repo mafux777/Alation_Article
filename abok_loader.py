@@ -37,16 +37,16 @@ if __name__ == "__main__":
     target.upload_dd_2(pd.read_pickle(dd_file), 0, "Alation Analytics")
 
     # First pass of fixing references
-    target.putQueries(ds_id=1, queries=queries)
+    target.putQueries(ds_id=3, queries=queries)
     Art.convert_references()
 
     extract_files()
 
     # log_me(u"Securely copying media files to remote host")
-    # secure_copy(host=u'18.218.6.215',
-    #             username=u'ec2-user',
-    #             key_filename=u'/Users/matthias.funke/.ssh/PSPersonMachines.pem',
-    #             local_dir=u"media/image_bank/", remote_dir=u"/data/site_data/media/image_bank")
+    # secure_copy(host=u'apt-poodle.alation-test.com',
+    #              username=u'matthias.funke',
+    #              key_filename=u'/Users/matthias.funke/.ssh/id_rsa',
+    #              local_dir=u"media/image_bank/", remote_dir=u"/data/site_data/media/image_bank")
 
 
     allTemplates = pd.read_csv("templates.csv")
@@ -74,7 +74,7 @@ if __name__ == "__main__":
     result = target.putArticles(Art, desired_template, c_fields)
     log_me(result.content)
 
-    target.fix_refs(ds_id=1) # data source for queries (on the target, post-migration)
+    target.fix_refs(ds_id=3) # data source for queries (on the target, post-migration)
     target.fix_children(allArticles) # passing DataFrame of source articles which contain P-C relationships
 
 

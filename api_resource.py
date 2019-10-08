@@ -9,9 +9,9 @@ api_json = """
   "path": [
     "New Flightaware APIs",
     "Weather",
-    "Get METAR"
+    "Post METAR"
   ],
-  "request_type": "GET",
+  "request_type": "POST",
   "input_schema": {
     "properties": {
       "airport": {
@@ -186,7 +186,7 @@ if __name__ == "__main__":
     # -- API Resources
 
     alation_1 = AlationInstance("https://demo-sales-se.alationcatalog.com",
-        "matthias.funke@alation.com", "...")
+        "matthias.funke@alation.com", "mbWv@7w7*ZmZ")
 
     r = alation_1.post_api_resource(json.loads(api_json))
     print (r)
