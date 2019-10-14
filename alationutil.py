@@ -3,9 +3,13 @@ import time
 
 
 def log_me(txt):
-    print u"{} {}".format(
-        time.strftime(u"%Y-%b-%d %H:%M:%S", time.localtime()),
-        txt)
+    try:
+        print u"{} {}".format(
+            time.strftime(u"%Y-%b-%d %H:%M:%S", time.localtime()),
+            txt)
+    except:
+        print u"{} Formatting issue with a log message.".format(
+            time.strftime(u"%Y-%b-%d %H:%M:%S", time.localtime()))
 
 
 def parse_t_metadata(r):

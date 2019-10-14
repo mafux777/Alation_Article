@@ -152,8 +152,12 @@ class AlationInstance():
         url = self.host + "/integration/v1/article/" + str(id) + "/"
         r = requests.put(url, headers=self.headers, verify=self.verify, json=article)
         if not r:
-            log_me(u"Issue with updating article {}\n{}".format(article['title'], r.content))
-        # return a dictionary
+            try:
+                log_me(u"Issue with updating article {}...".format(article['title']))
+                log_me(u"... {}".format(r.content))
+            except:
+                log_me(u"Formatting issue with article {}".format(id))
+            # return a dictionary
         art = json.loads(r.content)
         return art
 
@@ -540,7 +544,7 @@ class AlationInstance():
 
 
     def fix_refs(self, ds_id):
-        log_me(u"Pass 2: Getting all Articles, Queries, and AA Tables on Target")
+        log_me(u"----- Pass 2: Getting all Articles, Queries, and AA Tables on Target -----")
         # Get a handle on all the articles on the source instance
         articles = self.getArticles()
         queries = self.getQueries(ds_id=ds_id)

@@ -7,9 +7,11 @@ from contextlib import *
 
 from zipfile import ZipFile
 
+
 def extract_files():
     with closing(ZipFile('ABOK_media_files.zip', 'r')) as myzip:
         x = myzip.extractall()
+
 
 def list_files():
     try:
@@ -18,12 +20,14 @@ def list_files():
     except:
         return []
 
+
 def secure_copy(host, username, key_filename, local_dir, remote_dir):
     ssh_client = paramiko.SSHClient()
     ssh_client.set_missing_host_key_policy(paramiko.client.AutoAddPolicy)
     ssh_client.connect(host, username=username, key_filename=key_filename)
     with closing(WriteDir(ssh_client.get_transport(), remote_dir)) as scp:
         scp.send_dir(local_dir, preserve_times=True)
+
 
 if __name__ == "__main__":
     # extract_files()
