@@ -24,6 +24,7 @@ class AlationInstance():
         self.existing_fields = self.getCustomFields() # store existing custom fields
         log_me("Getting existing templates")
         self.existing_templates = self.getTemplates() # store existing templates
+        log_me("Getting existing data sources")
         self.ds = self.getDataSources()
         log_me(self.ds.loc[ : , ['id', 'title']].head(10))
 
@@ -104,6 +105,7 @@ class AlationInstance():
                 size = article_chunk.shape[0]
                 log_me("Took {} secs for {} items".format(time.time()-t0, size))
                 if size < limit: # not enough articles to continue
+                    log_me(u"Total number of articles downloaded: {}".format(skip-limit+size))
                     break
             except:
                 break
@@ -124,15 +126,37 @@ class AlationInstance():
                 skip = skip + limit
                 # create the DataFrame and index it properly
                 table_chunk = pd.DataFrame(json.loads(r.content))
+                if table_chunk.empty:
+                    log_me(u"No tables for data source id {}".format(ds_id))
+                    break
                 table_chunk.index = table_chunk.id
                 tables = tables.append(table_chunk)
                 size = table_chunk.shape[0]
                 log_me("Took {} secs for {} items".format(time.time()-t0, size))
                 if size < limit: # not enough articles to continue
+                    log_me(u"Total number of tables downloaded: {}".format(skip-limit+size))
                     break
             except:
                 break
         return tables
+
+    def getTablesByName(self, name):
+        url = self.host + "/integration/v1/table/"
+        components = name.split('.')
+        schema_name = components[0]
+        table_name  = components[1]
+        params = dict(name=table_name, schema_name=schema_name)
+        r = requests.get(url, headers=self.headers, verify=self.verify, params=params)
+        # create the DataFrame and index it properly
+        table_chunk = pd.DataFrame(json.loads(r.content))
+        size = table_chunk.shape[0]
+        if size>0:
+            table_chunk.index = table_chunk.id
+            return table_chunk[table_chunk.name==table_name]
+        else:
+            log_me(u"Could not find table {}".format(name))
+            return pd.DataFrame()
+
 
     def getArticleByID(self, id):
         url = self.host + "/integration/v1/article/" + str(id) + "/"
@@ -150,7 +174,9 @@ class AlationInstance():
 
     def updateArticle(self, id, article):
         url = self.host + "/integration/v1/article/" + str(id) + "/"
-        r = requests.put(url, headers=self.headers, verify=self.verify, json=article)
+        article_json = json.dumps(article)
+        self.headers['Content-Type'] = "application/json"
+        r = requests.put(url, headers=self.headers, verify=self.verify, data=article_json)
         if not r:
             try:
                 log_me(u"Issue with updating article {}...".format(article['title']))
@@ -168,6 +194,7 @@ class AlationInstance():
         r_parsed = json.loads(r.content)
         dd = pd.DataFrame(r_parsed[1:]) # skipping first row, no key
         dd.index = dd.key
+        log_me(u"This data dict contains {} items.".format(dd.shape[0]))
         return dd.loc[:, ['key', 'title', 'description']]
 
     def getTemplates(self):
@@ -401,6 +428,7 @@ class AlationInstance():
         params = dict(limit=1000, saved=True, published=True)
         r = requests.get(url, headers=self.headers, verify=self.verify, params=params)
         queries = pd.DataFrame(json.loads(r.content))
+        log_me(u"Total queries found: {}".format(queries.shape[0]))
         if 'id' in queries:
             queries = queries.loc[:, [u'id', u'title', u'description', u'published_content', u'ds', u'author']]
             queries.index = queries.id
@@ -422,30 +450,31 @@ class AlationInstance():
             hr = int(self.ds.loc[self.ds.title=="HR-VDS", 'id'])
 
 
-#            if "title" in ex_queries:
-#                match = single_query.title==ex_queries.title
-                # if match.any():
-                #     #log_me(u"{} exists, skipping for now".format(single_query.title))
-                #     pass
-                # else:
-            body={}
-            body[u'content'] = single_query.published_content
-            body[u'published_content'] = single_query.published_content
-            if ori_ds_id==1: # Alation Analytics!
-                body[u'ds_id'] = aa
-            elif ori_ds_id==10: # HR Database
-                body[u'ds_id'] = hr # this should be the DS for Employee Data -- REMOVE HARD CODE
+            if "title" in ex_queries:
+                match = single_query.title == ex_queries.title
+                if match.any():
+                    # Query already exists. Let's not duplicate it.
+                    pass
             else:
-                log_me(u"Not sure what to do...{}".format(single_query.title))
-                continue
-            body[u'title'] = single_query.title
-            if not single_query.description:
-                body[u'description'] = u" ... "
-            else:
-                body[u'description'] = single_query.description
-            body[u'published'] = True
-            r = requests.post(url, headers=self.headers, verify=self.verify, json=body)
-            #log_me(json.loads(r.content))
+                body = {}
+                body[u'content'] = single_query.published_content
+                body[u'published_content'] = single_query.published_content
+                if ori_ds_id==1: # Alation Analytics!
+                    body[u'ds_id'] = aa
+                elif ori_ds_id==10: # HR Database
+                    body[u'ds_id'] = hr # this should be the DS for Employee Data -- REMOVE HARD CODE
+                else:
+                    log_me(u"Issue with query...{}".format(single_query.title))
+                    log_me(u"No datasource associated with that query!")
+                    continue
+                body[u'title'] = single_query.title
+                if not single_query.description:
+                    body[u'description'] = u" ... "
+                else:
+                    body[u'description'] = single_query.description
+                body[u'published'] = True
+                r = requests.post(url, headers=self.headers, verify=self.verify, json=body)
+                #log_me(json.loads(r.content))
 
     def getUsers(self):
         log_me("Getting users")
@@ -455,10 +484,10 @@ class AlationInstance():
         return users
 
     def getDataSources(self):
-        log_me("Getting data sources")
         url = self.host + "/ajax/datasource/"
         r = requests.get(url, headers=self.headers, verify=self.verify)
         ds = pd.DataFrame(json.loads(r.content))
+        log_me(u"Total number of data sources: {}".format(ds.shape[0]))
         return ds
 
 
@@ -499,48 +528,51 @@ class AlationInstance():
                     log_me(u"WARNING -- NO FILE {}".format(url))
 
     def fix_children(self, source_articles):
+        log_me(u"---- Pass 3: Fixing parent-child relationships ----")
         # Let's read all articles again so we get the IDs, too.
-        new_Article = self.getArticles()
+        articles_on_target = self.getArticles()
         # iterate through all articles with children
         art_with_children = source_articles[source_articles.has_children].sort_index()
+        # Let's touch each parent only once
         for a in art_with_children.itertuples():
             # a is a parent
             t = a.title
             id = a.id
-            children = a.children
+            children = a.children # remember these are source IDs
             # see if the article exists on the target and what its ID is
-            target_parent = new_Article[new_Article.title==t]
+            target_parent = articles_on_target[articles_on_target.title == t]
             new_children = []
             if target_parent.empty:
                 log_me(u"Skipping to next article in the list - make sure to replicate articles first")
             else:
                 target_parent_id = int(target_parent[u'id'])
-                log_me(u"Parent: {}/{}, Children: {}".format(id, t, [c['id'] for c in children]))
+                target_parent_children = target_parent.at[target_parent_id, 'children']
+                if len(target_parent_children) >= 1:
+                    target_parent_children_ids = [c['id'] for c in target_parent_children]
+                else:
+                    target_parent_children_ids = []
                 for child in children:
                     try:
                         child_id = child[u'id']
                         child_title = child[u'title']
                         # On target machine
-                        target_child = new_Article[new_Article.title==child_title]
+                        target_child = articles_on_target[articles_on_target.title == child_title]
                         if target_child.empty:
-                            log_me(u"No target child: {}->{}".format(t, child_title))
+                            log_me(u"No target child: {} -> {}".format(t, child_title))
                         else:
                             target_child_id = target_child.iloc[0, :]['id']
-                            new_children.append(target_child_id)
+                            if target_child_id not in target_parent_children_ids:
+                                new_children.append(target_child_id)
                     except:
                         log_me(u"Child issue: {} -> {}".format(target_parent_id, child_title))
-                # delete all children first
-                new_article = dict(body=target_parent.loc[target_parent_id, u'body'], title=t, children=
-                                   []
-                                   ) # only the required fields...
-                #log_me(u"Updating article {}:{}->{}".format(id, t, new_children))
-                updated_art = self.updateArticle(target_parent_id, new_article)
-                time.sleep(2)
-                # update all children
-                new_article = dict(body=target_parent.loc[target_parent_id, u'body'], title=t, children=
-                                   [dict(id=new_child, otype="article") for new_child in new_children]
-                                   ) # only the required fields...
-                updated_art = self.updateArticle(target_parent_id, new_article)
+                if len(new_children)>0:
+                    log_me(u"Parent: {}/{}, Children: {}".format(id, t, [c['id'] for c in children]))
+                    log_me(u"Updating article {}:{} -> {}".format(target_parent_id, t, new_children))
+                    # update all children
+                    new_article = dict(body=target_parent.loc[target_parent_id, u'body'], title=t, children=
+                                       [dict(id=int(new_child), otype="article") for new_child in new_children]
+                                       ) # only the required fields...
+                    updated_art = self.updateArticle(int(target_parent_id), new_article)
 
 
     def fix_refs(self, ds_id):
@@ -548,7 +580,7 @@ class AlationInstance():
         # Get a handle on all the articles on the source instance
         articles = self.getArticles()
         queries = self.getQueries(ds_id=ds_id)
-        tables = self.getTables(ds_id=ds_id)
+        #tables = self.getTables(ds_id=ds_id)
         # Initialise them as not updated
         articles['updated'] = False
         # Go through all the articles which may contain references
@@ -564,7 +596,7 @@ class AlationInstance():
             # Go through all the hyperlinks to update them
             for m in match:
                 # We only care about Alation anchors, identified by the attr data-oid
-                if 'data-oid' in m.attrs:
+                if 'data-oid' in m.attrs and 'data-otype' in m.attrs:
                     # Store title, oid, and otype of the current hyperlink
                     oid = m['data-oid']
                     otype = m['data-otype']
@@ -592,7 +624,7 @@ class AlationInstance():
                         except:
                             log_me(u"Exception trying to match {} -> {}".format(t, title))
                     # Process links to queries
-                    elif otype == 'query':
+                    elif otype == 'query' and not queries.empty:
                         q_match = queries.title == title
                         if q_match.any():
                             matching_queries = queries[q_match]
@@ -604,32 +636,26 @@ class AlationInstance():
                             articles.at[id, 'updated'] = True  # update the article body
                             update_needed = True
                         else:
-                            log_me(u"No query match for {}->{}".format(t, title))
+                            log_me(u"No query match for {} -> {}".format(t, title))
                     elif otype == 'table':
-                        try:
-                            qual_name = title.split()[0]
-                            match = tables.qualified_name == qual_name
-                            if match.any():
-                                # m is a reference to somewhere and we need to fix it.
-                                oid = tables.id[match.idxmax()]
-                                m['data-oid'] = oid
-                                m['href'] = "/{}/{}/".format(otype, oid)
+                        qual_name = title.split()[0]
+                        tb = self.getTablesByName(qual_name)
+                        if not tb.empty:
+                            # m is a reference to somewhere and we need to fix it.
+                            oid = tb.index[-1]
+                            m['data-oid'] = oid
+                            m['href'] = "/{}/{}/".format(otype, oid)
+                            log_me(u"Link to table: {}".format(m))
 
-                                articles.at[id, 'body'] = soup.prettify()  # update the article body
-                                articles.at[id, 'updated'] = True  # update the article body
-                                update_needed = True
-                            else:
-                                log_me(u"No match for {}".format(title))
-                        except:
-                            log_me(u"Problem with {}".format(m))
+                            articles.at[id, 'body'] = soup.prettify()  # update the article body
+                            articles.at[id, 'updated'] = True  # update the article body
+                            update_needed = True
+                        else:
+                            log_me(u"No match for {}".format(title))
             if update_needed:
+                log_me(u"Updating article {}:{} -> {}".format(id, t, title))
                 new_article = dict(body=articles.at[id, 'body'], title=t)  # only the required fields...
-                #log_me(u"Updating article {}:{}->{}".format(id, t, title))
-                try:
-                    updated_art = self.updateArticle(id, new_article)
-                    #log_me(updated_art)
-                except:
-                    log_me(u"UNSUCCESSFUL: {}/{}".format(id, new_article))
+                updated_art = self.updateArticle(int(id), new_article)
 
     def upload_dd(self, filename, ds_id):
         dd = pd.read_csv(filename)
