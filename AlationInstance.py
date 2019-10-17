@@ -111,7 +111,7 @@ class AlationInstance():
                 break
         return articles
 
-    def getTables(self, ds_id=1, limit=100):
+    def getTables(self, ds_id, limit=100):
         log_me("Getting Tables from Instance")
         url = self.host + "/integration/v1/table/"
         skip = 0
@@ -182,7 +182,7 @@ class AlationInstance():
                 log_me(u"Issue with updating article {}...".format(article['title']))
                 log_me(u"... {}".format(r.content))
             except:
-                log_me(u"Formatting issue with article {}".format(id))
+                log_me(u"Formatting issue with article id={}".format(id))
             # return a dictionary
         art = json.loads(r.content)
         return art
@@ -422,7 +422,7 @@ class AlationInstance():
         CustomFields['template_id'] = dt.iloc[0, 2]
         return CustomFields.sort_index()
 
-    def getQueries(self, ds_id):
+    def getQueries(self):
         log_me(u"Getting queries")
         url = self.host + u"/api/query/"
         params = dict(limit=1000, saved=True, published=True)
@@ -436,45 +436,53 @@ class AlationInstance():
         else:
             return queries
 
-    def putQueries(self, ds_id, queries):
-        log_me(u"Getting existing queries to avoid duplicates")
-        ex_queries = self.getQueries(ds_id=0)
+    def putQueries(self, queries):
+        ex_queries = self.getQueries()
 
-        log_me(u"Putting queries")
         url = self.host + u"/api/query/"
+
+        log_me(u"----- Working on Query Uploads -----")
+        n = 0
+        articles = self.getArticles()
+        aa = self.look_up_ds_by_name("Alation Analytics")
+        hr = self.look_up_ds_by_name("HR-VDS")
+
         for single_query in queries.itertuples():
             #log_me(single_query.title)
             ori_ds_id = single_query.ds['id']
             ori_ds_title = single_query.ds['title']
-            aa = int(self.ds.loc[self.ds.title=="Alation Analytics", 'id'])
-            hr = int(self.ds.loc[self.ds.title=="HR-VDS", 'id'])
-
 
             if "title" in ex_queries:
                 match = single_query.title == ex_queries.title
                 if match.any():
                     # Query already exists. Let's not duplicate it.
-                    pass
-            else:
-                body = {}
-                body[u'content'] = single_query.published_content
-                body[u'published_content'] = single_query.published_content
-                if ori_ds_id==1: # Alation Analytics!
-                    body[u'ds_id'] = aa
-                elif ori_ds_id==10: # HR Database
-                    body[u'ds_id'] = hr # this should be the DS for Employee Data -- REMOVE HARD CODE
+                    query_id = ex_queries.id[match.idxmax()]
+                    #log_me(u"Not updating existing query {}".format(query_id))
                 else:
-                    log_me(u"Issue with query...{}".format(single_query.title))
-                    log_me(u"No datasource associated with that query!")
-                    continue
-                body[u'title'] = single_query.title
-                if not single_query.description:
-                    body[u'description'] = u" ... "
-                else:
-                    body[u'description'] = single_query.description
-                body[u'published'] = True
-                r = requests.post(url, headers=self.headers, verify=self.verify, json=body)
-                #log_me(json.loads(r.content))
+                    body = {}
+                    body[u'content'] = single_query.published_content
+                    body[u'published_content'] = single_query.published_content
+                    if ori_ds_id==1: # Alation Analytics!
+                        body[u'ds_id'] = aa
+                    elif ori_ds_id==10 and hr: # HR Database
+                        body[u'ds_id'] = hr
+                    else:
+                        log_me(u"Issue with query...{}".format(single_query.title))
+                        log_me(u"No datasource associated with that query!")
+                        continue
+                    body[u'title'] = single_query.title
+                    if not single_query.description:
+                        body[u'description'] = u" ... "
+                        log_me(u"Please add a description to query {}".format(single_query.title))
+                    else:
+                        body[u'description'] = self.fix_refs_2(single_query.description, articles=articles, queries=queries)
+                    body[u'published'] = True
+                    r = requests.post(url, headers=self.headers, verify=self.verify, json=body)
+                    if not r.status_code:
+                        log_me(u"Issue with a query upload: {}".format(r.content))
+                    else:
+                        n = n + 1
+        log_me(u"Uploaded ({}) queries.".format(n))
 
     def getUsers(self):
         log_me("Getting users")
@@ -490,6 +498,16 @@ class AlationInstance():
         log_me(u"Total number of data sources: {}".format(ds.shape[0]))
         return ds
 
+
+    def look_up_ds_by_name(self, ds_title):
+        # look up id of the data source by title
+        match = self.ds.title.eq(ds_title)
+        if match.any():
+            ds_id = self.ds.id[match.idxmax()]
+            return ds_id
+        else:
+            log_me(u"WARNING - No Data Source found for name {}".format(ds_title))
+            return
 
     def mkdir_p(self, path):
         try:
@@ -573,14 +591,14 @@ class AlationInstance():
                                        [dict(id=int(new_child), otype="article") for new_child in new_children]
                                        ) # only the required fields...
                     updated_art = self.updateArticle(int(target_parent_id), new_article)
+        log_me(u"Finished updating parent-child relationships.")
 
 
-    def fix_refs(self, ds_id):
-        log_me(u"----- Pass 2: Getting all Articles, Queries, and AA Tables on Target -----")
+    def fix_refs(self):
+        log_me(u"----- Pass 2: Getting all Articles, Queries -----")
         # Get a handle on all the articles on the source instance
         articles = self.getArticles()
-        queries = self.getQueries(ds_id=ds_id)
-        #tables = self.getTables(ds_id=ds_id)
+        queries = self.getQueries()
         # Initialise them as not updated
         articles['updated'] = False
         # Go through all the articles which may contain references
@@ -645,7 +663,7 @@ class AlationInstance():
                             oid = tb.index[-1]
                             m['data-oid'] = oid
                             m['href'] = "/{}/{}/".format(otype, oid)
-                            log_me(u"Link to table: {}".format(m))
+                            #log_me(u"Link to table: {}".format(m))
 
                             articles.at[id, 'body'] = soup.prettify()  # update the article body
                             articles.at[id, 'updated'] = True  # update the article body
@@ -656,46 +674,78 @@ class AlationInstance():
                 log_me(u"Updating article {}:{} -> {}".format(id, t, title))
                 new_article = dict(body=articles.at[id, 'body'], title=t)  # only the required fields...
                 updated_art = self.updateArticle(int(id), new_article)
+        log_me(u"Finished preparing references. ")
 
-    def upload_dd(self, filename, ds_id):
-        dd = pd.read_csv(filename)
-        dd = dd.loc[:, ['key', 'title', 'description']]
-        dd['key'] = u"1." + dd['key']
-        body = ""
-        for id, obj in dd.iterrows():
-            r = dict(obj)
-            body = body + json.dumps(r) + '\n'
-        log_me("Uploading data dictionary")
-        # Template name needs to be part of the URL
-        bulk = "/api/v1/bulk_metadata/custom_fields/"
-        template_name = 'default'
-        url = self.host + bulk + template_name + "/mixed"
-        params=dict(replace_values = True, create_new = True)
-        try:
-            r = requests.post(url, data=body, headers=self.headers, params=params, verify=self.verify)
-            if r.status_code != 200:
-                raise Exception(r.text)
-            return r
-        except IOError as e:
-            log_me("I/O error({0}): {1}".format(e.errno, e.strerror))
-        except ValueError:
-            log_me("Could not convert data to an integer.")
-        except:
-            log_me("Unexpected error:", sys.exc_info()[0])
-            raise
-        log_me("OK")
 
-    def upload_dd_2(self, dd, ds_id=0, ds_title=u""):
+    def fix_refs_2(self, description, articles, queries):
+        soup = BeautifulSoup(description, "html5lib")
+        # Find all Anchors = Hyperlinks
+        match = soup.findAll('a')
+        # Go through all the hyperlinks to update them
+        for m in match:
+            # We only care about Alation anchors, identified by the attr data-oid
+            if 'data-oid' in m.attrs and 'data-otype' in m.attrs:
+                # Store title, oid, and otype of the current hyperlink
+                otype = m['data-otype']
+                if 'title' in m.attrs:
+                    title = m['title']
+                else:
+                    title = m.get_text()
+                # Process links to articles
+                if otype == 'article':
+                    try:
+                        art_match = articles.title==title
+                        if art_match.any():
+                            # m is a reference to somewhere and we need to fix it.
+                            oid = articles.id[art_match.idxmax()]
+                            m['data-oid'] = oid
+                            m['href'] = "/{}/{}/".format(otype, oid)
+                        else:
+                            log_me(u"No article match for {}->{}".format(t, title))
+                            m['data-oid'] = 0
+                            del m['href']
+                    except:
+                        log_me(u"Exception trying to match desc. -> {}".format(title))
+                # Process links to queries
+                elif otype == 'query' and not queries.empty:
+                    q_match = queries.title == title
+                    if q_match.any():
+                        matching_queries = queries[q_match]
+                        # m is a reference to somewhere and we need to fix it.
+                        oid = (matching_queries.iloc[-1]).id # -1 means last
+                        m['data-oid'] = oid
+                        m['href'] = "/{}/{}/".format(otype, oid)
+                    else:
+                        log_me(u"No query match for desc. -> {}".format(title))
+                        m['data-oid'] = 0
+                        del m['href']
+                elif otype == 'table':
+                    qual_name = title.split()[0]
+                    tb = self.getTablesByName(qual_name)
+                    if not tb.empty:
+                        # m is a reference to somewhere and we need to fix it.
+                        oid = tb.index[-1]
+                        m['data-oid'] = oid
+                        m['href'] = "/{}/{}/".format(otype, oid)
+                        #log_me(u"Link to table: {}".format(m))
+                    else:
+                        log_me(u"No match for {}".format(title))
+                        m['data-oid'] = 0
+                        del m['href']
+        return soup.prettify()
+
+
+    def upload_dd(self, dd, ds_id=0, ds_title=u""):
         body = ""
         if not ds_id:
-            # look up id of the data source by title
-            match = self.ds.title.eq(ds_title)
-            if match.any():
-                ds_id = self.ds.id[match.idxmax()]
-                log_me(u"Data Dictionary Upload for {}/{}".format(ds_id, ds_title))
-            else:
-                log_me(u"WARNING - No Data Source found for DD upload")
-                return
+            ds_id = self.look_up_ds_by_name(ds_title)
+        log_me(u"Data Dictionary Upload for {}/{}".format(ds_id, ds_title))
+
+        if ds_title == "Alation Analytics":
+            log_me(u"----- Working on DD description fields -----")
+            articles = self.getArticles()
+            queries = self.getQueries()
+            dd['description'] = dd.description.apply(self.fix_refs_2, articles=articles, queries=queries)
 
         for id, obj in dd.iterrows():
             obj['key'] = "{}.{}".format(int(ds_id), obj['key'])

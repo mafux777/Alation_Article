@@ -41,30 +41,29 @@ if __name__ == "__main__":
     target = AlationInstance(url_2, user_2, passwd_2)
 
 
-
     log_me(u"Getting desired articles")
     allArticles  = alation_1.getArticles(template=desired_template) # download all articles
     allArticles.to_pickle(pickle_file)
     allArticles = pd.read_pickle(pickle_file)
     Art = Article(allArticles)                    # convert to Article class
-    queries = alation_1.getQueries(ds_id=0)
-    author = queries.author.apply(lambda x: x['id'] not in [1,5])
-    q = queries[author]
-    q.to_pickle(query_file)
+    queries = alation_1.getQueries()
+    #author = queries.author.apply(lambda x: x['id'] not in [1,5])
+    #q = queries[author]
+    #queries.to_pickle(query_file)
 
-    queries = pd.read_pickle(query_file)
+    #queries = pd.read_pickle(query_file)
 
-    query_html = generate_html(queries)
+    #query_html = generate_html(queries)
 
 
-    target.upload_dd_2(dd, 0, "Alation Analytics")
+    #target.upload_dd_2(dd, 0, "Alation Analytics")
 
     # First pass of fixing references
-    target.putQueries(ds_id=1, queries=queries)
+    target.putQueries(queries=queries)
     Art.convert_references()
 
     log_me(u"Getting media files via download")
-    alation_1.getMediaFile(Art.get_files())
+    #alation_1.getMediaFile(Art.get_files())
     extract_files()
 
     # log_me(u"Securely copying media files to remote host")
@@ -74,10 +73,10 @@ if __name__ == "__main__":
     #             local_dir=u"media/image_bank/", remote_dir=u"/data/site_data/media/image_bank")
 
 
-    log_me(u"Creating PDF")
-    Art.create_pdf(first=51, additional_html=query_html)
+    #log_me(u"Creating PDF")
+    #Art.create_pdf(first=51, additional_html=query_html)
 
-    #allTemplates = alation_1.getTemplates()          # download all templates (with their custom fields)
+    allTemplates = alation_1.getTemplates()          # download all templates (with their custom fields)
     #allTemplates.to_csv("templates.csv", encoding='utf-8', index=False)
     allTemplates = pd.read_csv("templates.csv")
     # We need to have quite detailed information to create the template!
@@ -106,7 +105,7 @@ if __name__ == "__main__":
     result = target.putArticles(Art, desired_template, c_fields)
     log_me(result.content)
 
-    target.fix_refs(ds_id=1) # data source for queries (on the target, post-migration)
+    target.fix_refs() # data source for queries (on the target, post-migration)
     target.fix_children(allArticles) # passing DataFrame of source articles which contain P-C relationships
 
 

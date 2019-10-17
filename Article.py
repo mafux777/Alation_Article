@@ -158,7 +158,7 @@ class Article():
                         try:
                             actual_title = self.article.at[int(oid), 'title']
                         except:
-                            log_me(u"Warning! Ref to article not found {}->{}".format(a.title, m))
+                            log_me(u"Warning! Ref to article not found {}->{}".format(a.title, m.get_text()))
                             actual_title=m.get_text()
                         m.string = actual_title
                         m['data-oid'] = 0
@@ -176,6 +176,8 @@ class Article():
                 #         log_me(u"External link: {} -> {}".format(a.id, m))
                 #     except:
                 #         log_me(u"Formatting issue {}".format(a.id))
+
+
 
 
     def get_files(self):

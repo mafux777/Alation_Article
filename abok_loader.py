@@ -34,12 +34,15 @@ if __name__ == "__main__":
     Art = Article(allArticles)                    # convert to Article class
     queries = pd.read_pickle(query_file)
 
-    target.upload_dd_2(pd.read_pickle(dd_file), 0, "Alation Analytics")
 
-    # First pass of fixing references
-    target.putQueries(ds_id=3, queries=queries)
+    target.putQueries(queries=queries)
+
+    # First pass of fixing references: set data-oid to 0 and add title to <a> anchor
+    # This means all links need to be re-calculated in Pass 2 to work
+    # But also, we can guarantee the links will not point to the wrong page
     Art.convert_references()
 
+    # Extract the media files zip
     extract_files()
 
     # log_me(u"Securely copying media files to remote host")
@@ -68,15 +71,18 @@ if __name__ == "__main__":
     # then the articles, and finally the glossaries.
 
     c_fields = target.putCustomFields(custom_fields) # returns a list of field IDs (existing or new)
-    desired_template_pd = allTemplates[allTemplates.title==desired_template]
+    desired_template_pd = allTemplates[allTemplates.title == desired_template]
     t = target.putCustomTemplate(desired_template_pd, c_fields) # returns the ID of the (new) template
+
     #target.putGlossaries(glossaries) --- NOT IMPLEMENTABLE YET DUE TO LACK OF API
     result = target.putArticles(Art, desired_template, c_fields)
     log_me(result.content)
 
-    target.fix_refs(ds_id=3) # data source for queries (on the target, post-migration)
+    target.fix_refs() # ds_id no longer needed
     target.fix_children(allArticles) # passing DataFrame of source articles which contain P-C relationships
 
+    # Some descriptions in the Alation Analytics data dictionary are links to ABOK articles, so have to do this last
+    target.upload_dd(pd.read_pickle(dd_file), 0, "Alation Analytics")
 
 
 

@@ -1,5 +1,6 @@
 import json
 import time
+from bs4 import BeautifulSoup
 
 
 def log_me(txt):
@@ -99,4 +100,15 @@ def touch_each(DataFrame): # a different col as a Series in each call
     d = DataFrame.apply(unpack)
     return d
 
-#new_df = allArticles.apply(touch_each, axis=0, result_type='expand')
+def convert_references_for_any_string(text):
+    soup = BeautifulSoup(text, "html5lib")
+    # Find all Anchors
+    match = soup.findAll('a')
+    for m in match:
+        # We only care about Alation anchors, identified by the attr data-oid
+        if 'data-oid' in m.attrs:
+            m.string = m.get_text()
+            m['data-oid'] = 0
+            del m['href']
+            m['title'] = m.string
+    return soup.prettify()
