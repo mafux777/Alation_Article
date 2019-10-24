@@ -1,7 +1,10 @@
-
+import requests
+import time
 import pandas as pd
-from urllib2 import urlopen
-from urlparse import urlparse
+import json
+from bs4 import BeautifulSoup
+#from urllib2 import urlopen
+#from urlparse import urlparse
 
 from alationutil import log_me
 from secure_copy import list_files
@@ -9,7 +12,7 @@ from secure_copy import list_files
 import errno
 import os
 from Article import Article
-from query import *
+#from query import *
 import zipfile
 from collections import OrderedDict, deque, defaultdict
 from types import *
@@ -26,6 +29,7 @@ class AlationInstance():
         self.existing_templates = self.getTemplates() # store existing templates
         log_me("Getting existing data sources")
         self.ds = self.getDataSources()
+        self.articles = pd.DataFrame() # cache for Articles
         log_me(self.ds.loc[ : , ['id', 'title']].head(10))
 
     def login(self, email, password):
@@ -109,6 +113,7 @@ class AlationInstance():
                     break
             except:
                 break
+        self.articles = articles # cache for later!
         return articles
 
     def getTables(self, ds_id, limit=100):
@@ -443,7 +448,6 @@ class AlationInstance():
 
         log_me(u"----- Working on Query Uploads -----")
         n = 0
-        articles = self.getArticles()
         aa = self.look_up_ds_by_name("Alation Analytics")
         hr = self.look_up_ds_by_name("HR-VDS")
 
@@ -475,7 +479,9 @@ class AlationInstance():
                         body[u'description'] = u" ... "
                         log_me(u"Please add a description to query {}".format(single_query.title))
                     else:
-                        body[u'description'] = self.fix_refs_2(single_query.description, articles=articles, queries=queries)
+                        body[u'description'] = self.fix_refs_2(single_query.description,
+                                                               ori_title=single_query.title,
+                                                               queries=queries)
                     body[u'published'] = True
                     r = requests.post(url, headers=self.headers, verify=self.verify, json=body)
                     if not r.status_code:
@@ -573,8 +579,11 @@ class AlationInstance():
                     try:
                         child_id = child[u'id']
                         child_title = child[u'title']
+
+                        match = articles_on_target.title.eq(child_title)
+
                         # On target machine
-                        target_child = articles_on_target[articles_on_target.title == child_title]
+                        target_child = articles_on_target[match]
                         if target_child.empty:
                             log_me(u"No target child: {} -> {}".format(t, child_title))
                         else:
@@ -594,10 +603,10 @@ class AlationInstance():
         log_me(u"Finished updating parent-child relationships.")
 
 
-    def fix_refs(self):
+    def fix_refs(self, template):
         log_me(u"----- Pass 2: Getting all Articles, Queries -----")
         # Get a handle on all the articles on the source instance
-        articles = self.getArticles()
+        articles = self.getArticles(template=template)
         queries = self.getQueries()
         # Initialise them as not updated
         articles['updated'] = False
@@ -677,7 +686,7 @@ class AlationInstance():
         log_me(u"Finished preparing references. ")
 
 
-    def fix_refs_2(self, description, articles, queries):
+    def fix_refs_2(self, description, queries, ori_title):
         soup = BeautifulSoup(description, "html5lib")
         # Find all Anchors = Hyperlinks
         match = soup.findAll('a')
@@ -694,18 +703,18 @@ class AlationInstance():
                 # Process links to articles
                 if otype == 'article':
                     try:
-                        art_match = articles.title==title
+                        art_match = self.articles.title==title
                         if art_match.any():
                             # m is a reference to somewhere and we need to fix it.
-                            oid = articles.id[art_match.idxmax()]
+                            oid = self.articles.id[art_match.idxmax()]
                             m['data-oid'] = oid
                             m['href'] = "/{}/{}/".format(otype, oid)
                         else:
-                            log_me(u"No article match for {}->{}".format(t, title))
+                            log_me(u"No article match for {} -> {}".format(ori_title, title))
                             m['data-oid'] = 0
                             del m['href']
                     except:
-                        log_me(u"Exception trying to match desc. -> {}".format(title))
+                        log_me(u"Exception / no article match for {} -> {}".format(ori_title, title))
                 # Process links to queries
                 elif otype == 'query' and not queries.empty:
                     q_match = queries.title == title
@@ -716,7 +725,7 @@ class AlationInstance():
                         m['data-oid'] = oid
                         m['href'] = "/{}/{}/".format(otype, oid)
                     else:
-                        log_me(u"No query match for desc. -> {}".format(title))
+                        log_me(u"No query match for {} -> {}".format(ori_title, title))
                         m['data-oid'] = 0
                         del m['href']
                 elif otype == 'table':
@@ -729,7 +738,7 @@ class AlationInstance():
                         m['href'] = "/{}/{}/".format(otype, oid)
                         #log_me(u"Link to table: {}".format(m))
                     else:
-                        log_me(u"No match for {}".format(title))
+                        log_me(u"No table match for {} -> {}".format(ori_title, title))
                         m['data-oid'] = 0
                         del m['href']
         return soup.prettify()
@@ -743,9 +752,8 @@ class AlationInstance():
 
         if ds_title == "Alation Analytics":
             log_me(u"----- Working on DD description fields -----")
-            articles = self.getArticles()
             queries = self.getQueries()
-            dd['description'] = dd.description.apply(self.fix_refs_2, articles=articles, queries=queries)
+            dd['description'] = dd.description.apply(self.fix_refs_2, queries=queries, ori_title=u"DD")
 
         for id, obj in dd.iterrows():
             obj['key'] = "{}.{}".format(int(ds_id), obj['key'])
@@ -766,9 +774,6 @@ class AlationInstance():
             log_me("I/O error({0}): {1}".format(e.errno, e.strerror))
         except ValueError:
             log_me("Could not convert data to an integer.")
-        except:
-            log_me("Unexpected error: {}".format(sys.exc_info()[0]))
-            raise
 
     # This method gets all API resources in a DataFrame
     # The information is limited, so this is only a helper function for
@@ -1032,6 +1037,3 @@ class AlationInstance():
             log_me("I/O error({0}): {1}".format(e.errno, e.strerror))
         except ValueError:
             log_me("Could not convert data to an integer.")
-        except:
-            log_me("Unexpected error: {}".format(sys.exc_info()[0]))
-            raise

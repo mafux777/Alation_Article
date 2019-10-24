@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 import pandas as pd
-
 from AlationInstance import AlationInstance
 from Article import Article
-from secure_copy import secure_copy, extract_files
-from query import *
+from secure_copy import extract_files#, secure_copy
+#from query import *
+from alationutil import log_me
 
 # import the necessary packages
 import argparse
@@ -40,7 +40,7 @@ if __name__ == "__main__":
     # First pass of fixing references: set data-oid to 0 and add title to <a> anchor
     # This means all links need to be re-calculated in Pass 2 to work
     # But also, we can guarantee the links will not point to the wrong page
-    Art.convert_references()
+    #Art.convert_references() -- not needed in the new pickle file??
 
     # Extract the media files zip
     extract_files()
@@ -78,7 +78,7 @@ if __name__ == "__main__":
     result = target.putArticles(Art, desired_template, c_fields)
     log_me(result.content)
 
-    target.fix_refs() # ds_id no longer needed
+    target.fix_refs(desired_template)
     target.fix_children(allArticles) # passing DataFrame of source articles which contain P-C relationships
 
     # Some descriptions in the Alation Analytics data dictionary are links to ABOK articles, so have to do this last

@@ -43,24 +43,24 @@ if __name__ == "__main__":
 
     log_me(u"Getting desired articles")
     allArticles  = alation_1.getArticles(template=desired_template) # download all articles
-    allArticles.to_pickle(pickle_file)
-    allArticles = pd.read_pickle(pickle_file)
+    #allArticles.to_pickle(pickle_file)
+    #allArticles = pd.read_pickle(pickle_file)
     Art = Article(allArticles)                    # convert to Article class
     queries = alation_1.getQueries()
     #author = queries.author.apply(lambda x: x['id'] not in [1,5])
     #q = queries[author]
-    #queries.to_pickle(query_file)
+    queries.to_pickle(query_file)
 
-    #queries = pd.read_pickle(query_file)
+    queries = pd.read_pickle(query_file)
 
     #query_html = generate_html(queries)
 
 
-    #target.upload_dd_2(dd, 0, "Alation Analytics")
 
     # First pass of fixing references
     target.putQueries(queries=queries)
     Art.convert_references()
+    Art.get_df().to_pickle(pickle_file)
 
     log_me(u"Getting media files via download")
     #alation_1.getMediaFile(Art.get_files())
@@ -105,8 +105,9 @@ if __name__ == "__main__":
     result = target.putArticles(Art, desired_template, c_fields)
     log_me(result.content)
 
-    target.fix_refs() # data source for queries (on the target, post-migration)
+    target.fix_refs(desired_template) # data source for queries (on the target, post-migration)
     target.fix_children(allArticles) # passing DataFrame of source articles which contain P-C relationships
+    target.upload_dd(dd, 0, "Alation Analytics")
 
 
 
