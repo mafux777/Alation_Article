@@ -24,6 +24,7 @@ if __name__ == "__main__":
     user_1   = args['username']
     passwd_1 = args['password']
 
+    base_path = '../article/'
     desired_template = u"ABOK Article"
     pickle_file = "ABOK.gzip"
     query_file = "AA Queries.gzip"
@@ -64,7 +65,7 @@ if __name__ == "__main__":
 
     log_me(u"Getting media files via download")
     #alation_1.getMediaFile(Art.get_files())
-    extract_files()
+    extract_files(base_path)
 
     # log_me(u"Securely copying media files to remote host")
     # secure_copy(host=u'18.218.6.215',
@@ -78,12 +79,12 @@ if __name__ == "__main__":
 
     allTemplates = alation_1.getTemplates()          # download all templates (with their custom fields)
     #allTemplates.to_csv("templates.csv", encoding='utf-8', index=False)
-    allTemplates = pd.read_csv("templates.csv")
+    allTemplates = pd.read_csv(base_path + "templates.csv")
     # We need to have quite detailed information to create the template!
 
     custom_fields = target.getCustomFields_from_template(desired_template) # this way we also get the template info
-    custom_fields.to_pickle("custom_fields.gzip")
-    custom_fields = pd.read_pickle("custom_fields.gzip")
+    custom_fields.to_pickle(base_path + "custom_fields.gzip")
+    custom_fields = pd.read_pickle(base_path + "custom_fields.gzip")
 
     # create a migration notes field to hold manual migration instructions
     migration_error = dict(allow_multiple=False, allowed_otypes=None, backref_name=None, backref_tooltip_text=None,

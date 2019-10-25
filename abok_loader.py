@@ -17,7 +17,7 @@ if __name__ == "__main__":
     ap.add_argument("-H", "--host",      required=True,  help="URL of the Alation instance")
     args = vars(ap.parse_args())
 
-
+    base_path = '../article/'
     desired_template = u"ABOK Article"
     pickle_file = "ABOK.gzip"
     query_file = "AA Queries.gzip"
@@ -30,9 +30,9 @@ if __name__ == "__main__":
     passwd_2 = args['password']
     target = AlationInstance(url_2, user_2, passwd_2)
 
-    allArticles = pd.read_pickle(pickle_file)
+    allArticles = pd.read_pickle(base_path + pickle_file)
     Art = Article(allArticles)                    # convert to Article class
-    queries = pd.read_pickle(query_file)
+    queries = pd.read_pickle(base_path + query_file)
 
 
     target.putQueries(queries=queries)
@@ -43,7 +43,7 @@ if __name__ == "__main__":
     #Art.convert_references() -- not needed in the new pickle file??
 
     # Extract the media files zip
-    extract_files()
+    extract_files(base_path)
 
     # log_me(u"Securely copying media files to remote host")
     # secure_copy(host=u'apt-poodle.alation-test.com',
@@ -52,10 +52,10 @@ if __name__ == "__main__":
     #              local_dir=u"media/image_bank/", remote_dir=u"/data/site_data/media/image_bank")
 
 
-    allTemplates = pd.read_csv("templates.csv")
+    allTemplates = pd.read_csv(base_path + "templates.csv")
     # We need to have quite detailed information to create the template!
 
-    custom_fields = pd.read_pickle("custom_fields.gzip")
+    custom_fields = pd.read_pickle(base_path + "custom_fields.gzip")
 
     # create a migration notes field to hold manual migration instructions
     migration_error = dict(allow_multiple=False, allowed_otypes=None, backref_name=None, backref_tooltip_text=None,
@@ -82,7 +82,7 @@ if __name__ == "__main__":
     target.fix_children(allArticles, template=desired_template) # passing DataFrame of source articles which contain P-C relationships
 
     # Some descriptions in the Alation Analytics data dictionary are links to ABOK articles, so have to do this last
-    target.upload_dd(pd.read_pickle(dd_file), 0, "Alation Analytics")
+    target.upload_dd(pd.read_pickle(base_path + dd_file), 0, "Alation Analytics")
 
 
 

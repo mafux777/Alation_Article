@@ -3,6 +3,7 @@ import time
 import pandas as pd
 import json
 from bs4 import BeautifulSoup
+import html5lib
 #from urllib2 import urlopen
 #from urlparse import urlparse
 
@@ -341,7 +342,7 @@ class AlationInstance():
                 return field['id']
             elif len(field_exists)==1:
                 #log_me("{} already exists (info only)".format(field_exists.iloc[0, 6]))
-                return field_exists.iloc[0, 6]  # ID of the field
+                return field_exists.iloc[0]['id']  # ID of the field
             else:
                 log_me("WARNING -- MULTIPLE FIELDS WITH THE SAME NAME")
                 log_me(field_exists.loc[:,['id', 'name']])
