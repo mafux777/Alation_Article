@@ -79,7 +79,7 @@ if __name__ == "__main__":
     log_me(result.content)
 
     target.fix_refs(desired_template)
-    target.fix_children(allArticles) # passing DataFrame of source articles which contain P-C relationships
+    target.fix_children(allArticles, template=desired_template) # passing DataFrame of source articles which contain P-C relationships
 
     # Some descriptions in the Alation Analytics data dictionary are links to ABOK articles, so have to do this last
     target.upload_dd(pd.read_pickle(dd_file), 0, "Alation Analytics")

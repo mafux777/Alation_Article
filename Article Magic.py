@@ -106,7 +106,7 @@ if __name__ == "__main__":
     log_me(result.content)
 
     target.fix_refs(desired_template) # data source for queries (on the target, post-migration)
-    target.fix_children(allArticles) # passing DataFrame of source articles which contain P-C relationships
+    target.fix_children(allArticles, template=desired_template) # passing DataFrame of source articles which contain P-C relationships
     target.upload_dd(dd, 0, "Alation Analytics")
 
 

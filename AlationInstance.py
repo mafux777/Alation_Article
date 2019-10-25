@@ -467,9 +467,9 @@ class AlationInstance():
                     body[u'content'] = single_query.published_content
                     body[u'published_content'] = single_query.published_content
                     if ori_ds_id==1: # Alation Analytics!
-                        body[u'ds_id'] = aa
+                        body[u'ds_id'] = int(aa)
                     elif ori_ds_id==10 and hr: # HR Database
-                        body[u'ds_id'] = hr
+                        body[u'ds_id'] = int(hr)
                     else:
                         log_me(u"Issue with query...{}".format(single_query.title))
                         log_me(u"No datasource associated with that query!")
@@ -551,10 +551,10 @@ class AlationInstance():
                 else:
                     log_me(u"WARNING -- NO FILE {}".format(url))
 
-    def fix_children(self, source_articles):
+    def fix_children(self, source_articles, template='all'):
         log_me(u"---- Pass 3: Fixing parent-child relationships ----")
         # Let's read all articles again so we get the IDs, too.
-        articles_on_target = self.getArticles()
+        articles_on_target = self.getArticles(template=template)
         # iterate through all articles with children
         art_with_children = source_articles[source_articles.has_children].sort_index()
         # Let's touch each parent only once
