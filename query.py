@@ -14,7 +14,7 @@ from bs4 import BeautifulSoup
 import re
 import sys
 import argparse
-import pdfkit
+#import pdfkit
 from alationutil import *
 from numpy import isnan
 

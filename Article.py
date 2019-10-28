@@ -4,7 +4,7 @@ import re
 import pandas as pd
 import datetime
 import os
-import pdfkit
+#import pdfkit
 import abok
 from bs4 import BeautifulSoup
 
@@ -138,7 +138,7 @@ class Article():
         csv.to_csv(filename, encoding=encoding)
 
     def head(self):
-        print self.article.head()
+        print (self.article.head())
 
     def convert_references(self):
         # First pass: create a DataFrame of target articles with

@@ -5,12 +5,12 @@ from bs4 import BeautifulSoup
 
 def log_me(txt):
     try:
-        print u"{} {}".format(
+        print ("{} {}".format(
             time.strftime(u"%Y-%b-%d %H:%M:%S", time.localtime()),
-            txt)
+            txt))
     except:
-        print u"{} Formatting issue with a log message.".format(
-            time.strftime(u"%Y-%b-%d %H:%M:%S", time.localtime()))
+        print ("{} Formatting issue with a log message.".format(
+            time.strftime(u"%Y-%b-%d %H:%M:%S", time.localtime())))
 
 
 def parse_t_metadata(r):

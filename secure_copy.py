@@ -8,14 +8,14 @@ from contextlib import *
 from zipfile import ZipFile
 
 
-def extract_files():
-    with closing(ZipFile('ABOK_media_files.zip', 'r')) as myzip:
+def extract_files(base_path):
+    with closing(ZipFile(base_path + 'ABOK_media_files.zip', 'r')) as myzip:
         x = myzip.extractall()
 
 
-def list_files():
+def list_files(base_path):
     try:
-        with closing(ZipFile('ABOK_media_files.zip', 'r')) as myzip:
+        with closing(ZipFile(base_path + 'ABOK_media_files.zip', 'r')) as myzip:
             return myzip.NameToInfo.keys()
     except:
         return []
