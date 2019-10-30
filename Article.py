@@ -179,12 +179,15 @@ class Article():
 
 
 
-
+    # iterate through the bodies of all articles and return a tuple with article ID and media file
     def get_files(self):
-        soup = BeautifulSoup(self.article.body.sum(), "html5lib")
-        images = soup.findAll('img')
-        src = [i['src'] for i in images]
-        return set(src)
+        src=[]
+        for ind, a in self.article.body.iteritems():
+            soup = BeautifulSoup(a, "html5lib")
+            images = soup.findAll('img')
+            if images:
+                src.append([(ind, i['src']) for i in images])
+        return src
 
     # def get_files_old(self):
     #     match = self.article.body.apply(lambda x: re.findall(

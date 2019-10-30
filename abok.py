@@ -62,6 +62,31 @@ def clean_up(html):
 
     return html
 
+from collections import deque
+
+output = deque([])
+
+def recursive_child_seek(article, id):
+    # we know the first time we have children, guranteed
+    # we want to go down to the childless and take them off the list
+    # and add them to a final result
+    try:
+        print (article.title[id])
+        if article.has_children[id]:
+            current_children = article.children[id]
+            for c in current_children:
+                recursive_child_seek(article, c['id'])
+            output.append(id) # parent goes last :)
+        else:
+            output.appendleft(id)
+            return
+    except:
+        pass
+
+def check_sequence(article, first):
+    recursive_child_seek(article, first)
+    return output
+
 if __name__ == "__main__":
     with open('clean_html.html', 'r') as html:
          html_str = html.read()
