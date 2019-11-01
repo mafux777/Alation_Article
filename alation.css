@@ -39,3 +39,109 @@ h4 {
    font-weight: 500;
    color: #4e4e4e;
 }
+
+.fr-view .fr-img-caption .fr-img-wrap img {
+    display: block;
+    margin: auto;
+    width: 100%;
+}
+.fabric img {
+    vertical-align: baseline;
+}
+.fr-view img {
+    position: relative;
+    max-width: 100%;
+    background-color: #295b88;
+}
+img {
+    width: auto\9;
+    height: auto;
+    max-width: 100%;
+    vertical-align: middle;
+    border: 0;
+    -ms-interpolation-mode: bicubic;
+}
+.fr-view .fr-img-caption .fr-img-wrap {
+    padding: 0;
+    display: inline-block;
+    margin: auto;
+    text-align: center;
+    width: 100%;
+}
+.fr-view .fr-img-caption {
+    text-align: center;
+}
+.ui-rich-text-editor {
+    color: #4E4E4E;
+}
+.fabric {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    color: #4E4E4E;
+    font-weight: 400;
+    line-height: normal;
+}
+Style Attribute {
+    visibility: visible;
+}
+
+.ui-rich-text-editor table tr td:last-child, .ui-rich-text-editor table tr th:last-child {
+    border-right: none;
+}
+.ui-rich-text-editor table tr td, .ui-rich-text-editor table tr th {
+    padding: 4px;
+    border-right: 1px solid #dcdcdc;
+}
+.fr-view table th, .fr-view table td {
+    border: none;
+}
+.fr-view table td, .fr-view table th {
+    border: 1px solid #ddd;
+}
+user agent stylesheet
+td {
+    display: table-cell;
+    vertical-align: inherit;
+}
+.fabric table {
+    max-width: 100%;
+    background-color: transparent;
+    border-collapse: collapse;
+    border-spacing: 0;
+}
+.fr-view table {
+    border: none;
+    border-collapse: collapse;
+    empty-cells: show;
+    max-width: 100%;
+}
+
+table, th, td {
+  border: 1px solid #ddd;
+}
+
+th, td {
+  padding: 5px;
+  text-align: left;
+}
+
+tr:nth-child(even) {background-color: #f2f2f2;}
+
+th {
+  background-color: black;
+  color: white;
+}
+table {
+    max-width: 100%;
+    background-color: transparent;
+    border-collapse: collapse;
+    border-spacing: 0;
+}
+.ui-rich-text-editor {
+    color: #4E4E4E;
+}
+
+.ace_static_highlight {
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', 'Droid Sans Mono', monospace;
+    font-size: 12px;
+}

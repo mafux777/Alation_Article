@@ -4,7 +4,7 @@ import pandas as pd
 import json
 from bs4 import BeautifulSoup
 import html5lib
-#from urllib2 import urlopen
+import urllib
 #from urlparse import urlparse
 
 from alationutil import log_me
@@ -160,7 +160,7 @@ class AlationInstance():
             table_chunk.index = table_chunk.id
             return table_chunk[table_chunk.name==table_name]
         else:
-            log_me(u"Could not find table {}".format(name))
+            #log_me(u"Could not find table {}".format(name))
             return pd.DataFrame()
 
 
@@ -177,6 +177,10 @@ class AlationInstance():
         # return a dictionary
         art = json.loads(r.content)
         return art
+
+    def delArticle(self, id):
+        url = self.host + "/integration/v1/article/" + str(id) + "/"
+        r = requests.delete(url, headers=self.headers, verify=self.verify)
 
     def updateArticle(self, id, article):
         url = self.host + "/integration/v1/article/" + str(id) + "/"
@@ -431,9 +435,10 @@ class AlationInstance():
     def getQueries(self):
         log_me(u"Getting queries")
         url = self.host + u"/api/query/"
-        params = dict(limit=1000, saved=True, published=True)
+        params = dict(limit=1000, saved=True, published=True, deleted=False)
         r = requests.get(url, headers=self.headers, verify=self.verify, params=params)
         queries = pd.DataFrame(json.loads(r.content))
+        queries = queries[queries.deleted==False]
         log_me(u"Total queries found: {}".format(queries.shape[0]))
         if 'id' in queries:
             queries = queries.loc[:, [u'id', u'title', u'description', u'published_content', u'ds', u'author']]
@@ -446,6 +451,8 @@ class AlationInstance():
         ex_queries = self.getQueries()
 
         url = self.host + u"/api/query/"
+
+        datasource_with_errors = {}
 
         log_me(u"----- Working on Query Uploads -----")
         n = 0
@@ -472,8 +479,12 @@ class AlationInstance():
                     elif ori_ds_id==10 and hr: # HR Database
                         body[u'ds_id'] = int(hr)
                     else:
-                        log_me(u"Issue with query...{}".format(single_query.title))
-                        log_me(u"No datasource associated with that query!")
+                        if ori_ds_id in datasource_with_errors:
+                            pass
+                        else:
+                            log_me(u"Issue with query...{}".format(single_query.title))
+                            log_me(u"No datasource associated with that query!")
+                            datasource_with_errors[ori_ds_id] = ori_ds_title
                         continue
                     body[u'title'] = single_query.title
                     if not single_query.description:
@@ -525,32 +536,33 @@ class AlationInstance():
             else:
                 raise
 
-    def getMediaFile(self, media_set):
+    def getMediaFile(self, media_set, basepath):
         # Get a list of files already contained in the local ZIP file
-        existing_files = list_files()
-        for filename in media_set:
-            try:
-                #log_me(filename)
-                url = urlopen(filename)
-                filename = urlparse(filename).path
-            except ValueError:  # invalid URL - that means it's only a path
-                url = self.host + filename
-            except:
-                # sometimes we get Error 403 (unauth.), no problem
-                url = filename
-                filename = urlparse(filename).path
-            if filename in existing_files:
-                # log_me(u"Good news - no need to download {}".format(filename))
-                pass
-            else:
-                log_me(u"Downloading and saving {}".format(url))
-                r = requests.get(url, headers=self.headers, verify=self.verify)
-                if r.status_code == 200:
-                    with zipfile.ZipFile('ABOK_media_files.zip', 'a') as myzip:
-                        myzip.writestr(filename, r.content)
-                    existing_files.append(filename)
+        existing_files = list(list_files(basepath))
+        for article_file_list in media_set:
+            for article_id, filename in article_file_list:
+                try:
+                    #log_me(filename)
+                    url = urllib.request.urlopen(filename)
+                    filename = urllib.parse.urlparse(filename).path
+                except ValueError:  # invalid URL - that means it's only a path
+                    url = self.host + filename
+                except:
+                #    # sometimes we get Error 403 (unauth.), no problem
+                    url = filename
+                    filename = urllib.parse.urlparse(filename).path
+                if filename in existing_files:
+                    # log_me(u"Good news - no need to download {}".format(filename))
+                    pass
                 else:
-                    log_me(u"WARNING -- NO FILE {}".format(url))
+                    log_me(u"Downloading and saving {} -> {}".format(article_id, url))
+                    r = requests.get(url, headers=self.headers, verify=self.verify)
+                    if r.status_code == 200:
+                        with zipfile.ZipFile('ABOK_media_files.zip', 'a') as myzip:
+                            myzip.writestr(filename, r.content)
+                        existing_files.append(filename)
+                    else:
+                        log_me(u"WARNING -- NO FILE {}".format(url))
 
     def fix_children(self, source_articles, template='all'):
         log_me(u"---- Pass 3: Fixing parent-child relationships ----")
@@ -739,14 +751,15 @@ class AlationInstance():
                         m['href'] = "/{}/{}/".format(otype, oid)
                         #log_me(u"Link to table: {}".format(m))
                     else:
-                        log_me(u"No table match for {} -> {}".format(ori_title, title))
+                        #log_me(u"No table match for {} -> {}".format(ori_title, title))
                         m['data-oid'] = 0
                         del m['href']
         return soup.prettify()
 
 
-    def upload_dd(self, dd, ds_id=0, ds_title=u""):
+    def upload_dd(self, dd, ds_id=0, ds_title=u"", articles_created=[]):
         body = ""
+        self.articles=pd.DataFrame(articles_created)
         if not ds_id:
             ds_id = self.look_up_ds_by_name(ds_title)
         log_me(u"Data Dictionary Upload for {}/{}".format(ds_id, ds_title))
@@ -765,7 +778,7 @@ class AlationInstance():
         bulk = "/api/v1/bulk_metadata/custom_fields/"
         template_name = 'default'
         url = self.host + bulk + template_name + "/mixed"
-        params=dict(replace_values=True, create_new=True)
+        params=dict(replace_values=False, create_new=True)
         try:
             r = requests.post(url, data=body, headers=self.headers, params=params, verify=self.verify)
             if r.status_code != 200:
