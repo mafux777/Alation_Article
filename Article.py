@@ -4,7 +4,7 @@ import re
 import pandas as pd
 import datetime
 import os
-#import pdfkit
+import pdfkit
 import abok
 from bs4 import BeautifulSoup
 
@@ -248,7 +248,7 @@ class Article():
             'quiet': ''
         }
         # Define the location of the created ABOK pdf file
-        ABOKpdffilename = u'Draft ABOK' + now.strftime(u" %Y-%b-%d %H_%M ") + u'.pdf'
+        ABOKpdffilename = u'ABOK' + now.strftime(u" %Y-%b-%d %H_%M ") + u'.pdf'
         seq = self.check_sequence(first)
         html = u'<meta http-equiv="Content-Type" content="text/html; charset=utf-8">' +\
                u'<link rel="stylesheet" href="https://use.typekit.net/pno7yrt.css">' +\

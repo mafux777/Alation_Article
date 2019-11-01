@@ -19,6 +19,8 @@ if __name__ == "__main__":
     ap.add_argument("-u", "--username",  required=True,  help="username")
     ap.add_argument("-p", "--password",  required=True,  help="password")
     ap.add_argument("-H", "--host",      required=True,  help="URL of the Alation instance")
+    ap.add_argument("-d", "--delete",  action='store_const',
+                    const=True, default=False,  required=False, help="delete previous")
     args = vars(ap.parse_args())
 
     base_path = ''
@@ -45,7 +47,12 @@ if __name__ == "__main__":
     url_2    = args['host']
     user_2   = args['username']
     passwd_2 = args['password']
+    delete_flag = args['delete']
     target = AlationInstance(url_2, user_2, passwd_2)
+    if delete_flag:
+        a = target.getArticles(template=desired_template)
+        log_me('Deleting existing articles: {}'.format(a.id))
+        a.id.apply(target.delArticle)
 
     Art = Article(allArticles)                    # convert to Article class
 

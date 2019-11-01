@@ -19,6 +19,8 @@ if __name__ == "__main__":
     ap.add_argument("-v", "--username2", required=False, help="username2")
     ap.add_argument("-w", "--password2", required=False, help="password2")
     ap.add_argument("-x", "--host2",     required=False, help="URL of the 2nd Alation instance")
+    ap.add_argument("-f", "--pickle",    required=False, help="pickle file name")
+    ap.add_argument("-t", "--template",  required=False, help="desired template")
     args = vars(ap.parse_args())
 
     url_1    = args['host']
@@ -26,11 +28,9 @@ if __name__ == "__main__":
     passwd_1 = args['password']
 
     base_path = ''
-    desired_template = u"ABOK Article"
-    pickle_file = "ABOK.gzip"
+    desired_template = args['template']
+    pickle_file = args['pickle']
     pickle_cont = {}
-    ######query_file = "AA Queries.gzip"
-    ######dd_file = "AA_dd.gzip"
 
     # --- Log into the source instance
     alation_1 = AlationInstance(url_1, user_1, passwd_1)
@@ -48,19 +48,16 @@ if __name__ == "__main__":
 
     Art = Article(allArticles)                    # convert to Article class
     queries = alation_1.getQueries()
-    #author = queries.author.apply(lambda x: x['id'] not in [1,5])
-    #q = queries[author]
-    #queries.to_pickle(query_file)
+    author = queries.author.apply(lambda x: x['id'] not in [1,5])
+    queries = queries[author]
 
-    #queries = pd.read_pickle(query_file)
-
-    #query_html = generate_html(queries)
+    query_html = generate_html(queries)
 
 
 
     # First pass of fixing references
     #target.putQueries(queries=queries)
-    #Art.convert_references()
+    Art.convert_references()
 
     log_me(u"Getting media files via download")
     list_of_files = list(Art.get_files())
@@ -75,7 +72,7 @@ if __name__ == "__main__":
 
 
     #log_me(u"Creating PDF")
-    #Art.create_pdf(first=51, additional_html=query_html)
+    Art.create_pdf(first=51, additional_html=query_html)
 
     allTemplates = alation_1.getTemplates()          # download all templates (with their custom fields)
     #allTemplates.to_csv("templates.csv", encoding='utf-8', index=False)
