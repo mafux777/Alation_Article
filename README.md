@@ -63,6 +63,6 @@ Requirement already satisfied: webencodings==0.5.1 in c:\program files (x86)\pyt
 You should obtain these files from your Alation contact
 
 ## Run abok_loader
-abok_loader.py -H http_yourhost -u yourusername -p yourpassword
+python abok_loader.py -H http_yourhost -u yourusername -p yourpassword
   
 If you have any questions, please contact your Alation CSM (not Technical Support)
