@@ -8,6 +8,8 @@ Proceed as follows:
 ### Option 1: git
 git clone https://github.com/mafux777/Alation_Article/
 
+cd Alation_Article
+
 git checkout abok_loader
 
 ### Option 2:
