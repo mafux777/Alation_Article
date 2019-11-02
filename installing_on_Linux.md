@@ -7,7 +7,7 @@ Prepare by copying ABOK.gzip and ABOK_media_files.zip to the home directory, e.g
 
 scp -i ~/.ssh/YOURKEY.pem ABOK.gzip  ec2-user@YOURHOST:/home/ec2-user/Alation_Article/
 
-scp -i ~/.ssh/YOURKEY.pem ABOK_media_files.zip ec2-user@YOURHOST:/home/ec2-user/
+scp -i ~/.ssh/YOURKEY.pem ABOK_media_files.zip ec2-user@YOURHOST:/home/ec2-user/Alation_Article/
 
 sudo yum install python36 # red hat style
 
