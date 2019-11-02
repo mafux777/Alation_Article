@@ -1,13 +1,9 @@
 # -*- coding: utf-8 -*-
-import pandas as pd
-from AlationInstance import AlationInstance
-from Article import Article
-from secure_copy import extract_files#, secure_copy
-#from query import *
-from alationutil import log_me
-from abok import check_sequence
 
 # import the necessary packages
+from AlationInstance import AlationInstance
+from alationutil import log_me
+from abok import check_sequence
 import argparse
 import time
 import re
@@ -39,10 +35,6 @@ if __name__ == "__main__":
     allTemplates = pickle_cont['template']
     custom_fields = pickle_cont['custom_fields']
 
-
-
-
-
     # --- Log into the target instance
     url_2    = args['host']
     user_2   = args['username']
@@ -53,8 +45,6 @@ if __name__ == "__main__":
         a = target.getArticles(template=desired_template)
         log_me('Deleting existing articles: {}'.format(a.id))
         a.id.apply(target.delArticle)
-
-    Art = Article(allArticles)                    # convert to Article class
 
     templates = target.getTemplates()
     template_id = int(templates[templates.title==desired_template]['id'])

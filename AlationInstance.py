@@ -5,18 +5,14 @@ import json
 from bs4 import BeautifulSoup
 import html5lib
 import urllib
-#from urlparse import urlparse
 
 from alationutil import log_me
 from secure_copy import list_files
 
 import errno
 import os
-from Article import Article
-#from query import *
 import zipfile
 from collections import OrderedDict, deque, defaultdict
-from types import *
 from math import isnan
 
 class AlationInstance():
