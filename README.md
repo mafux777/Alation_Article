@@ -62,6 +62,9 @@ Requirement already satisfied: webencodings==0.5.1 in c:\program files (x86)\pyt
 ## Copy ABOK.gzip and ABOK_media_files.zip
 You should obtain these files from your Alation contact
 
+## Prepare Alation
+This version of the code does not create all templates automatically. Please create an Article Template called "ABOK Article" without any custom fields manually.
+
 ## Run abok_loader
 python abok_loader.py -H http_yourhost -u yourusername -p yourpassword
   
