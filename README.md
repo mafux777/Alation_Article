@@ -4,6 +4,16 @@ This branch of the code is meant for uploading ABOK to a customer's instance.
 
 Proceed as follows:
 
+## Download the code
+### Option 1: git
+git clone https://github.com/mafux777/Alation_Article/
+
+git checkout abok_loader
+
+### Option 2:
+Download the code manually from https://github.com/mafux777/Alation_Article/tree/abok_loader
+
+
 ## Check Python 3 is installed
 In a command prompt, type python and look at the version number. It should be 3.x
 
@@ -53,6 +63,6 @@ Requirement already satisfied: webencodings==0.5.1 in c:\program files (x86)\pyt
 You should obtain these files from your Alation contact
 
 ## Run abok_loader
-abok_loader.py -H https://<yourhost> -u <yourusername> -p <yourpassword>
+abok_loader.py -H http_yourhost -u yourusername -p yourpassword
   
 If you have any questions, please contact your Alation CSM (not Technical Support)
