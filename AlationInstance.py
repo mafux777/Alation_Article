@@ -778,7 +778,7 @@ class AlationInstance():
         bulk = "/api/v1/bulk_metadata/custom_fields/"
         template_name = 'default'
         url = self.host + bulk + template_name + "/mixed"
-        params=dict(replace_values=False, create_new=True)
+        params=dict(replace_values=True, create_new=True)
         try:
             r = requests.post(url, data=body, headers=self.headers, params=params, verify=self.verify)
             if r.status_code != 200:

@@ -32,9 +32,9 @@ test = {
 }
 
 #url2 = "https://funkmeister510.alationcatalog.com/integration/v1/data/6/parse_docstore/"
-url = "https://r5-sandbox.alationproserv.com/"
-api = "integration/v1/data/29/parse_docstore/"
-headers = dict(token='875251a7-beec-426d-b921-965cc3c0d77f')
+url = "http://18.218.6.215/"
+api = "integration/v1/data/3/parse_docstore/"
+headers = dict(token='e3a43bb9-b62c-48c8-9bea-6feccc265356')
 
 dexcom = {'folders':[{'name':'Root Folder',
                       'collections':[]}]}

@@ -45,11 +45,12 @@ if __name__ == "__main__":
 
     log_me(u"Getting desired articles")
     allArticles  = alation_1.getArticles(template=desired_template) # download all articles
-
+    allArticles['body'] = allArticles.body.apply(lambda x: x.replace('https://abok.alationproserv.com', ''))
     Art = Article(allArticles)                    # convert to Article class
+    Art.to_csv('ABOK_art.csv')
     queries = alation_1.getQueries()
-    author = queries.author.apply(lambda x: x['id'] not in [1,5])
-    queries = queries[author]
+    #author = queries.author.apply(lambda x: x['id'] not in [1,5])
+    #queries = queries[author]
 
     query_html = generate_html(queries)
 
@@ -72,7 +73,7 @@ if __name__ == "__main__":
 
 
     #log_me(u"Creating PDF")
-    Art.create_pdf(first=51, additional_html=query_html)
+    #Art.create_pdf(first=51, additional_html=query_html)
 
     allTemplates = alation_1.getTemplates()          # download all templates (with their custom fields)
     #allTemplates.to_csv("templates.csv", encoding='utf-8', index=False)

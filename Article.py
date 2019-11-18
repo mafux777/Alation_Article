@@ -120,7 +120,7 @@ class Article():
         del csv[u'ts_updated']
         del csv[u'template_id']
         del csv[u'url']
-        del csv[u'references']
+        #del csv[u'references']
         csv[u'template_name'] = csv.template_title
         csv[u'key'] = csv.title
         csv[u'description'] = csv.body

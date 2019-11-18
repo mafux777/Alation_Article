@@ -26,8 +26,8 @@ if __name__ == "__main__":
     base_path = ''
     desired_template = u"ABOK Article"
     pickle_file = "ABOK.gzip"
-    query_file = "AA Queries.gzip"
-    dd_file = "AA_dd.gzip"
+    #query_file = "AA Queries.gzip"
+    #dd_file = "AA_dd.gzip"
 
     with open(pickle_file, 'rb') as mypickle:
         p = pickle.Unpickler(mypickle)
