@@ -8,6 +8,8 @@ Proceed as follows:
 ### Option 1: git
 git clone https://github.com/mafux777/Alation_Article/
 
+cd Alation_Article
+
 git checkout abok_loader
 
 ### Option 2:
@@ -15,7 +17,7 @@ Download the code manually from https://github.com/mafux777/Alation_Article/tree
 
 
 ## Check Python 3 is installed
-In a command prompt, type python and look at the version number. It should be 3.x
+In a command prompt, type python -V and look at the version number. It should be 3.x
 
 ## Check pip3 is installed
 Type pip -V 
@@ -25,7 +27,7 @@ The output should be similar to:
 pip 19.2.3 from c:\program files (x86)\python38-32\lib\site-packages\pip (python 3.8)
 
 ## Install the requirements
-Type pip install -r abok_re.txt
+Type pip3 install -r abok_re.txt
 
 There should be no error messages. If you run the same command again, the output should be more or less like this:
 
@@ -66,6 +68,6 @@ You should obtain these files from your Alation contact
 This version of the code does not create all templates automatically. Please create an Article Template called "ABOK Article" without any custom fields manually.
 
 ## Run abok_loader
-python abok_loader.py -H http_yourhost -u yourusername -p yourpassword
+python3 abok_loader.py -H http_yourhost -u yourusername -p yourpassword
   
 If you have any questions, please contact your Alation CSM (not Technical Support)
