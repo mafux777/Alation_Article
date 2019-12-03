@@ -173,7 +173,7 @@ class AlationInstance():
 
     def postArticle(self, article):
         url = self.host + "/integration/v1/article/"
-        r = requests.post(url, headers=self.headers, verify=self.verify, json=article)
+        r = requests.post(url, headers=self.headers, verify=self.verify, json=dict(article))
         # return a dictionary
         art = json.loads(r.content)
         return art
@@ -206,6 +206,13 @@ class AlationInstance():
         dd.index = dd.key
         log_me(u"This data dict contains {} items.".format(dd.shape[0]))
         return dd.loc[:, ['key', 'title', 'description']]
+
+    def download_datadict_r6(self, ds_id):
+        url = self.host + "/data/download_dict/"
+        form = dict(format='json', otype="data", oid=ds_id)
+        r = requests.post(url, headers=self.headers, verify=self.verify, data=form)
+        r_parsed = json.loads(r.content)
+        return r_parsed
 
     def getTemplates(self):
         url = self.host + "/integration/v1/custom_template/"
@@ -345,7 +352,7 @@ class AlationInstance():
                 self.existing_fields = self.getCustomFields() # so we don't get a duplicate next time (could be more efficient)
                 return field['id']
             elif len(field_exists)==1:
-                #log_me("{} already exists (info only)".format(field_exists.iloc[0, 6]))
+                log_me("{} already exists (info only)".format(field_exists.iloc[0, 6]))
                 return field_exists.iloc[0]['id']  # ID of the field
             else:
                 log_me("WARNING -- MULTIPLE FIELDS WITH THE SAME NAME")
@@ -392,9 +399,31 @@ class AlationInstance():
                 self.add_customfields_to_template(t, fields)
         return t_id
 
+    def putCustomTemplate_simple(self, template, fields=[]):
+        url = self.host + "/ajax/custom_template/"
+
+        keys = ["id", "title", "builtin_name", "field_ids", "template_in_use"]
+        payload = {}
+
+        payload['fields'] = []
+        payload['title'] = template
+        url = self.host + "/ajax/custom_template/"
+        headers = self.headers
+        headers['Referer'] = url
+        log_me("Putting template {}".format(template))
+        r = requests.post(url, json=payload, headers=headers, verify=self.verify)
+        if r.status_code != 200:
+            raise Exception(r.text)
+
+        t = json.loads(r.text)
+        self.existing_templates = self.getTemplates()  # so we don't get a duplicate next time (could be more efficient)
+        if len(fields)>0:
+            self.add_customfields_to_template(t['id'], fields)
+        return t['id']
+
     # prepare the Articles and upload via Bulk API
     def putArticles(self, article, template_name, custom_fields, bulk="/api/v1/bulk_metadata/custom_fields/"):
-        log_me("Putting Articles on Instance")
+        #log_me("Putting Articles on Instance")
         # Template name needs to be part of the URL
         template_name = template_name.replace(" ", "%20")
         url = self.host + bulk + template_name + "/article"
@@ -408,6 +437,26 @@ class AlationInstance():
         params=dict(replace_values = True, create_new = True)
         try:
             r = requests.post(url, data=body, headers=self.headers, params=params, verify=self.verify)
+            if r.status_code != 200:
+                raise Exception(r.text)
+            return r
+        except IOError as e:
+            log_me(u"I/O error({0}): {1}".format(e.errno, e.strerror))
+        except ValueError:
+            log_me(u"Could not convert data to an integer.")
+        except:
+            log_me(u"Unexpected error:".format(sys.exc_info()[0]))
+            raise
+
+    def putArticles_2(self, article, template_name):
+        #log_me("Putting Articles on Instance")
+        # Template name needs to be part of the URL
+        template_name = template_name.replace(" ", "%20")
+        url = self.host + "/api/v1/bulk_metadata/custom_fields/" + template_name + "/article"
+        params=dict(replace_values = True, create_new = True)
+        try:
+            r = requests.post(url, data=article, headers=self.headers, params=params, verify=self.verify)
+            #print(r.content)
             if r.status_code != 200:
                 raise Exception(r.text)
             return r

@@ -177,6 +177,26 @@ class Article():
                 #     except:
                 #         log_me(u"Formatting issue {}".format(a.id))
 
+    def convert_references_2(self):
+        # First pass: create a DataFrame of target articles with
+        # New articles that are being migrated or referenced
+        # All references to articles "zero-ed out" - will be re-calculated in Second Pass
+        # The title gets saved in the title attribute of the anchor (safer)
+        for a in self.article.itertuples():
+            soup = BeautifulSoup(a.body, "html5lib")
+            # Find all Anchors
+            match = soup.findAll('a')
+            for m in match:
+                # We only care about Alation anchors, identified by the attr data-oid
+                if 'data-oid' in m.attrs:
+                    # we have found a link with an data-oid and a data-otype
+                    oid=int(m['data-oid'])
+                    otype=m['data-otype']
+                    if otype=='article':
+                        if int(a.id)<=1582 or oid<=1582:
+                            print("{:04}/{:60} -----------> {:04}/{:60}".format(a.id, a.title, oid, m.get_text()))
+
+
 
 
     # iterate through the bodies of all articles and return a tuple with article ID and media file
