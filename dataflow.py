@@ -1,7 +1,17 @@
 import requests
 import json
+import random
 
-ds_id = 9
+host = "http://18.218.6.215"
+url = host + "/integration/v1/datasource/"
+random = ''.join(random.sample("ABCDEFGHJKLMNPQRSTUVWXYZ0123456789", 4))
+params=dict(dbtype="postgresql", title=f"My API DS {random}", is_virtual=True, deployment_setup_complete=True)
+headers = dict(token='----REMOVED-----')
+r = requests.post(url=url, headers=headers, json=params)
+
+status = (json.loads(r.content))
+ds_id = status['id']
+print(f"Created data source: {host}/data/{ds_id}/")
 
 sample_data = [
     {"key": ".SOURCE"},
@@ -36,7 +46,7 @@ for datum in sample_data:
 
 host = "http://18.218.6.215"
 url = host + "/api/v1/bulk_metadata/extraction/"+str(ds_id)+"?remove_not_seen=true"
-headers = dict(token='9109bf99-2eaa-4eb8-bbec-c21905281ffa')
+#headers = dict(token='9109bf99-2eaa-4eb8-bbec-c21905281ffa')
 r = requests.post(url=url, headers=headers, data=body)
 
 status = (json.loads(r.content))
@@ -48,9 +58,9 @@ while(True):
     r_2 = requests.get(url=url_job, headers=headers)
     status = (json.loads(r_2.content))
     if status['status']!='running':
-        error_objects = json.loads(status['result'])['error_objects']
-        if error_objects:
-            for error in error_objects:
+        objects = json.loads(status['result'])['error_objects']
+        if objects:
+            for error in objects:
                 print (error)
         else:
             print (status)
@@ -134,10 +144,10 @@ while(True):
     r_2 = requests.get(url=url_job, headers=headers, params=params)
     status = (json.loads(r_2.content))
     if status['status']!='running':
-        error_objects = status['result']
-        if error_objects:
+        objects = status['result']
+        if objects:
             #for error in error_objects:
-             print (error_objects)
+             print (objects)
         else:
             print (status)
         break

@@ -496,8 +496,17 @@ class AlationInstance():
         else:
             return queries
 
+    def put_single_query(self, single_query):
+        url = self.host + u"/api/query/"
+        r = requests.post(url, headers=self.headers, verify=self.verify, json=single_query)
+        if not r.status_code:
+            log_me(u"Issue with a query upload: {}".format(r.content))
+        else:
+            return r.text
+
     def putQueries(self, queries):
         ex_queries = self.getQueries()
+        url = self.host + u"/api/query/"
 
         url = self.host + u"/api/query/"
 

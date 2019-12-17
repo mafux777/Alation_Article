@@ -34,7 +34,7 @@ if __name__ == "__main__":
 
     # --- Log into the source instance
     alation_1 = AlationInstance(url_1, user_1, passwd_1)
-    dd = alation_1.download_datadict(1) # Alation Analytics is 1 on ABOK
+    dd = alation_1.download_datadict_r6(1) # Alation Analytics is 1 on ABOK
 
     # --- Log into the target instance
     url_2    = args['host2']
@@ -45,9 +45,10 @@ if __name__ == "__main__":
 
     log_me(u"Getting desired articles")
     allArticles  = alation_1.getArticles(template=desired_template) # download all articles
+    #allArticles=allArticles.loc[1583:]
     allArticles['body'] = allArticles.body.apply(lambda x: x.replace('https://abok.alationproserv.com', ''))
     Art = Article(allArticles)                    # convert to Article class
-    Art.to_csv('ABOK_art.csv')
+    #Art.to_csv('ABOK_art.csv')
     queries = alation_1.getQueries()
     #author = queries.author.apply(lambda x: x['id'] not in [1,5])
     #queries = queries[author]
@@ -58,7 +59,8 @@ if __name__ == "__main__":
 
     # First pass of fixing references
     #target.putQueries(queries=queries)
-    Art.convert_references()
+    #Art.convert_references()
+    Art.convert_references_2()
 
     log_me(u"Getting media files via download")
     list_of_files = list(Art.get_files())
@@ -72,8 +74,8 @@ if __name__ == "__main__":
     #             local_dir=u"media/image_bank/", remote_dir=u"/data/site_data/media/image_bank")
 
 
-    #log_me(u"Creating PDF")
-    #Art.create_pdf(first=51, additional_html=query_html)
+    log_me(u"Creating PDF")
+    Art.create_pdf(first=1889, additional_html=query_html)
 
     allTemplates = alation_1.getTemplates()          # download all templates (with their custom fields)
     #allTemplates.to_csv("templates.csv", encoding='utf-8', index=False)
@@ -92,11 +94,11 @@ if __name__ == "__main__":
     with open(pickle_file, 'wb') as mypickle:
         p = pickle.Pickler(mypickle, pickle.HIGHEST_PROTOCOL)
         p.dump(pickle_cont)
-    # create a migration notes field to hold manual migration instructions
-    migration_error = dict(allow_multiple=False, allowed_otypes=None, backref_name=None, backref_tooltip_text=None,
-                           builtin_name=None, field_type=u'RICH_TEXT',
-                           name_plural=u'Migration Notes', name_singular=u'Migration Notes',
-                           options=[])
+    # # create a migration notes field to hold manual migration instructions
+    # migration_error = dict(allow_multiple=False, allowed_otypes=None, backref_name=None, backref_tooltip_text=None,
+    #                        builtin_name=None, field_type=u'RICH_TEXT',
+    #                        name_plural=u'Migration Notes', name_singular=u'Migration Notes',
+    #                        options=[])
 
     #if custom_fields.shape[0]>0:
     #    custom_fields = custom_fields.append(migration_error, ignore_index=True)
@@ -105,11 +107,11 @@ if __name__ == "__main__":
     # Next, we put the objects we want. We need to start with the custom fields, then the template,
     # then the articles, and finally the glossaries.
 
-    #c_fields = alation_1.putCustomFields(custom_fields) # returns a list of field IDs (existing or new)
+    c_fields = alation_1.putCustomFields(custom_fields) # returns a list of field IDs (existing or new)
     #desired_template_pd = allTemplates[allTemplates.title==desired_template]
     #t = target.putCustomTemplate(desired_template_pd, c_fields) # returns the ID of the (new) template
     #target.putGlossaries(glossaries) --- NOT IMPLEMENTABLE YET DUE TO LACK OF API
-    #result = target.putArticles(Art, desired_template, c_fields)
+    result = alation_1.putArticles_2(Art, desired_template, c_fields)
     #log_me(result.content)
 
     #target.fix_refs(desired_template) # data source for queries (on the target, post-migration)

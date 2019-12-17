@@ -47,6 +47,17 @@ if __name__ == "__main__":
     delete_flag = args['delete']
     target = AlationInstance(url_2, user_2, passwd_2)
 
+    # ---- test query
+    body = {}
+    body['content'] = "this is a new query"
+    body['published_content'] = body['content']
+    body['ds_id'] = 1
+    body['title'] = "Query Title"
+    body['description'] = "Let's make sure every query has a description"
+    body['published'] = True
+    body['author'] = 1
+    r = target.put_single_query(body)
+# --------------------------
     dd = target.download_datadict_r6(1)  # Alation Analytics is 1 on ABOK
 
 
