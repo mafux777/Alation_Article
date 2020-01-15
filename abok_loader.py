@@ -50,24 +50,24 @@ if __name__ == "__main__":
     delete_flag = args['delete']
     target = AlationInstance(url_2, user_2, passwd_2)
     if delete_flag:
-        a = target.getArticles(template=desired_template)
+        a = target.get_articles(template=desired_template)
         log_me('Deleting existing articles: {}'.format(a.id))
-        a.id.apply(target.delArticle)
+        a.id.apply(target.del_article)
 
     Art = Article(allArticles)                    # convert to Article class
 
-    templates = target.getTemplates()
+    templates = target.get_templates()
     template_id = int(templates[templates.title==desired_template]['id'])
 
     target.putQueries(queries=queries)
     queries = target.getQueries() # this is so we can figure out the number
 
-    order = check_sequence(allArticles, first=51)
-    dummy = target.postArticle(dict(title="dummy {}".format(
+    order = check_sequence(allArticles, first=1889)
+    dummy = target.post_article(dict(title="dummy {}".format(
             time.strftime(u"%Y-%b-%d %H:%M:%S", time.localtime()))
                                     , body='Delete this afterwards'))
     dummy_id = int(dummy['id'])
-    target.delArticle(dummy_id)
+    target.del_article(dummy_id)
     offset = dummy_id+1
     n = len(order)
     od = {}
@@ -102,7 +102,7 @@ if __name__ == "__main__":
                         return "<a data-oid=\"{0}\" data-otype=\"query\" href=\"/query/{0}/\"></a>".format(oid)
             elif matchobj.group(2)=="table":
                 qual_name = matchobj.group(4).split()[0]
-                tb = target.getTablesByName(qual_name)
+                tb = target.get_tables_by_name(qual_name)
                 if not tb.empty:
                     oid = tb.index[-1]
                     return "<a data-oid=\"{0}\" data-otype=\"table\" href=\"/table/{0}/\"></a>".format(oid)
@@ -132,7 +132,7 @@ if __name__ == "__main__":
              body=new_body,
              custom_templates=[template_id],
              children=children)
-        b = target.postArticle(a)
+        b = target.post_article(a)
         articles_created.append(b)
         if 'id' in b and b['id']==offset+i:
                 print("{}->{}:{}".format(ii, b['id'], b['title']))
@@ -154,7 +154,7 @@ if __name__ == "__main__":
 
 
     # Some descriptions in the Alation Analytics data dictionary are links to ABOK articles, so have to do this last
-    target.upload_dd(dd, 0, "Alation Analytics", articles_created)
+    #target.upload_dd(dd, 0, "Alation Analytics", articles_created)
 
 
 
