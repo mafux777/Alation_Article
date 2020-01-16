@@ -26,6 +26,8 @@ class AlationInstance():
     def __init__(self, host, email, password, verify=True):
         self.host = host
         self.verify = verify
+        self.email = email
+        self.password = password
         self.headers = self.login(email, password)
         log_me("Getting existing custom fields")
         self.existing_fields = self.get_custom_fields() # store existing custom fields
@@ -197,16 +199,91 @@ class AlationInstance():
         log_me("This data dict contains {} items.".format(dd.shape[0]))
         return dd.loc[:, ['key', 'title', 'description']]
 
-    # The download_datadict_r6 method kicks off the creation of a data dictionary file on the server
-    # This only works in R6
-    # Note that the return value does not contain much useful information
-    # The file will sit on the server in /opt/alation/site/downloads/data_dictionary/ until it expires
+    # The download_datadict_r6 uses the metadata API to download a data dictionary
+    # It will contain key, title, description, and the numerical IDs of the schema, table, column
+    # Return a dataframe
+    #
     def download_datadict_r6(self, ds_id):
-        url = self.host + "/data/download_dict/"
-        form = dict(format='json', otype="data", oid=ds_id)
-        r = requests.post(url, headers=self.headers, verify=self.verify, data=form)
-        r_parsed = json.loads(r.content)
-        return r_parsed
+        # url = self.host + "/data/download_dict/"
+        # form = dict(format='json', otype="data", oid=ds_id)
+        # r = requests.post(url, headers=self.headers, verify=self.verify, data=form)
+        # r_parsed = json.loads(r.content)
+        # return r_parsed
+        token = self.get_token()
+        headers=dict(token=token)
+        schemas = dict()
+
+        list_of_elements = list()
+
+        # Data Source
+        url = self.host + f'/integration/v1/datasource/{ds_id}'
+        r = requests.get(url=url, headers=headers)
+        ds = r.json()
+        list_of_elements.append(dict(
+            key=str(ds['id']),
+            title=ds['title'],
+            description=ds['description']
+        ))
+
+        # Schema
+        url = self.host + f'/integration/v1/schema/?ds_id={ds_id}'
+        r = requests.get(url=url, headers=headers)
+        for schema in r.json():
+            name = schema['name']
+            schemas[schema['id']] = name # we need this later
+            list_of_elements.append(dict(
+                key         = f'{ds_id}.{name}',
+                title       = schema['title'],
+                description = schema['description'],
+                schema_id   = str(schema['id'])
+            ))
+
+        # Table
+        url = self.host + f'/integration/v1/table/?ds_id={ds_id}'
+        r = requests.get(url=url, headers=headers)
+        for table in r.json():
+            name = table['name']
+            schema_name = table['schema_name']
+            list_of_elements.append(dict(
+                key         = f'{ds_id}.{schema_name}.{name}',
+                title       = table['title'],
+                description = table['description'],
+                schema_id   = str(table['schema_id']),
+                table_id    = str(table['id'])
+            ))
+
+        # Column
+        url = self.host + f'/integration/v1/column/?ds_id={ds_id}'
+        r = requests.get(url=url, headers=headers)
+        for col in r.json():
+            name = col['name']
+            schema_name = schemas[col['schema_id']] # unfortunately, this does not come with the API
+            table_name = col['table_name'] # includes the schema already
+            list_of_elements.append(dict(
+                key         = f'{ds_id}.{table_name}.{name}',
+                title       = col['title'],
+                description = col['description'],
+                schema_id   = str(col['schema_id']),
+                table_id    = str(col['table_id']),
+                column_id   = str(col['id']),
+                data_type   = col['data_type']
+
+            ))
+
+
+        dd = pd.DataFrame(list_of_elements)
+        return dd
+
+    def get_token(self):
+        change_token = "/api/v1/changeToken/"  # if you already have a token, use this url
+        new_token = "/api/v1/getToken/"  # if you have never generated a token, use this url
+        data = dict(username=self.email, password=self.password)
+        response = requests.post(self.host + new_token, data=data)
+        api_token = response.text
+        if api_token == "EXISTING":
+            response = requests.post(self.host + change_token, data=data)
+            api_token = response.text
+        return api_token
 
     # The get_templates method returns a DataFrame with all templates, sorted and indexed by ID
     # This includes built-in templates

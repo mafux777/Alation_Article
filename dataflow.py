@@ -2,12 +2,12 @@ import requests
 import json
 import random
 
-host = "http://18.218.6.215"
+host = "https://demo-partners.alationcatalog.com"
 url = host + "/integration/v1/datasource/"
 random = ''.join(random.sample("ABCDEFGHJKLMNPQRSTUVWXYZ0123456789", 4))
 params=dict(dbtype="postgresql", title=f"My API DS {random}", is_virtual=True, deployment_setup_complete=True)
-headers = dict(token='----REMOVED-----')
-r = requests.post(url=url, headers=headers, json=params)
+headers = dict(token='ed1235ba-aa6e-455f-b0a1-5958d4ae50cc')
+r = requests.post(url=url, headers=headers, json=params, verify=False)
 
 status = (json.loads(r.content))
 ds_id = status['id']
@@ -44,7 +44,7 @@ for datum in sample_data:
     datum['key'] = str(ds_id) + datum['key']
     body = body + json.dumps(datum) + "\n"
 
-host = "http://18.218.6.215"
+#host = "http://18.218.6.215"
 url = host + "/api/v1/bulk_metadata/extraction/"+str(ds_id)+"?remove_not_seen=true"
 #headers = dict(token='9109bf99-2eaa-4eb8-bbec-c21905281ffa')
 r = requests.post(url=url, headers=headers, data=body)

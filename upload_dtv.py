@@ -71,7 +71,7 @@ if __name__ == "__main__":
     dtv = pd.read_csv(args['pickle'], sep=';')
     cols = list(dtv.axes[1])
 
-    downloaded_dd = pd.read_csv('/Users/matthias.funke/Downloads/schema_26_1_2019-12-03T11-17-26-141401.csv')
+    #downloaded_dd = pd.read_csv('/Users/matthias.funke/Downloads/schema_26_1_2019-12-03T11-17-26-141401.csv')
 
 
     # # -- produce a list of tables --
@@ -174,7 +174,7 @@ if __name__ == "__main__":
         unique_vals = len(unique_vals__)
         print("------ {} ({})------".format(col_name, unique_vals))
 
-        if(1<unique_vals<=120):
+        if(20<unique_vals<=120):
             custom_fields.append(dict(allow_multiple=False,
                                       allowed_otypes=None,
                                       backref_name=None,
@@ -226,16 +226,16 @@ if __name__ == "__main__":
 
 
 
-    c_fields = target.putCustomFields(custom_fields_pd)
+    c_fields = target.put_custom_fields(custom_fields_pd)
     print(c_fields)
     # returns a list of field IDs (existing or new)
-    target.putCustomTemplate_simple(file_key, c_fields)
+    target.put_custom_template(file_key, c_fields)
 
     n = 100
     s = dtv.shape[0]
     j = math.floor(s/n) + 1 # how many blocks of 100?
 
-    for b in range(5):
+    for b in range(j):
         log_me("Starting block {} of {} - total {}".format(b, n, s))
         body = ""
         for i in range(n):
@@ -254,7 +254,8 @@ if __name__ == "__main__":
                 if k in pickers and pickers[k]>1:
                     new[cut_str(file_key+k)] = v
             # Let's give our article a descriptive and unique name
-            new['key'] = "{}-{}-{}-{}".format(file_key, art_as_dict['Data_Item'], art_as_dict['Ref_No'],i)
+            #new['key'] = "{}-{}-{}-{}".format(file_key, art_as_dict['Data_Item'], art_as_dict['Ref_No'],i)
+            new['key'] = art_as_dict['Term']
             # The body of the article will contain a table with all the values
             # This looks good, but means the picker values are shown again (and need to updated separately)
             new['description'] = create_table_html(table_in_body)
@@ -264,7 +265,7 @@ if __name__ == "__main__":
             body = body + art_as_json
 
         # Send the request to the Alation instance
-        r=target.putArticles_2(body, file_key)
+        r=target.put_articles_2(body, file_key)
         # Were there any errors?
         r_ = json.loads(r.content)
         if 'error_objects' in r_:
