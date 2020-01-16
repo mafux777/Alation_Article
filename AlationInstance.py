@@ -930,7 +930,10 @@ class AlationInstance():
             dd['description'] = dd.description.apply(self.fix_refs_2, queries=queries, ori_title="DD")
 
         for id, obj in dd.iterrows():
-            obj['key'] = "{}.{}".format(int(ds_id), obj['key'])
+            key_from_source = obj['key']
+            keys_without_ds = key_from_source.split('.')[1:]
+            key_2 = ".".join(keys_without_ds)
+            obj['key'] = "{}.{}".format(int(ds_id), key_2)
             r = dict(obj)
             body = body + json.dumps(r) + '\n'
         log_me("Uploading data dictionary")
