@@ -71,8 +71,8 @@ class AlationInstance():
         url = self.host + "/ajax/custom_field/"
         payload = {}
         r = requests.get(url, data=json.dumps(payload), headers=self.headers, verify=self.verify)
-        if r.status_code == 200:
-            fields = pd.DataFrame(json.loads(r.content))
+        if not r.status_code:
+            fields = pd.DataFrame(r.json())
             fields.index = fields.id
             return fields.sort_index()
         else:
@@ -115,7 +115,7 @@ class AlationInstance():
                 r = requests.get(url, headers=self.headers, verify=self.verify, params=params)
                 skip = skip + limit
                 # create the DataFrame and index it properly
-                article_chunk = pd.DataFrame(json.loads(r.content))
+                article_chunk = pd.DataFrame(r.json())
                 # re-use the article ID as the index of the DataFrame
                 article_chunk.index = article_chunk.id
                 articles = articles.append(article_chunk)
@@ -139,7 +139,7 @@ class AlationInstance():
         params = dict(name=table_name, schema_name=schema_name)
         r = requests.get(url, headers=self.headers, verify=self.verify, params=params)
         # create the DataFrame and index it properly
-        table_with_name = pd.DataFrame(json.loads(r.content))
+        table_with_name = pd.DataFrame(r.json())
         size = table_with_name.shape[0]
         if size>0:
             table_with_name.index = table_with_name.id
@@ -154,7 +154,7 @@ class AlationInstance():
         url = self.host + "/integration/v1/article/" + str(id) + "/"
         r = requests.get(url, headers=self.headers, verify=self.verify)
         # return a dictionary
-        article = json.loads(r.content)
+        article = r.json()
         return article
 
     # The post_article method creates a new article based on a dictionary with at least title and body
@@ -163,7 +163,7 @@ class AlationInstance():
         url = self.host + "/integration/v1/article/"
         r = requests.post(url, headers=self.headers, verify=self.verify, json=dict(article))
         # return a dictionary
-        art = json.loads(r.content)
+        art = r.json()
         return art
 
     # The del_article method deletes an existing article and returns nothing
@@ -184,7 +184,7 @@ class AlationInstance():
             except:
                 log_me("Formatting issue with article id={}".format(id))
         # return a dictionary
-        art = json.loads(r.content)
+        art = r.json()
         return art
 
     # The download_datadict method returns a pandas DataFrame with key, title and description for a specific data source
@@ -193,7 +193,7 @@ class AlationInstance():
         url = self.host + "/data/"+str(ds_id)+"/download_dict/data/"+str(ds_id)+"/"
         params = dict(format='json')
         r = requests.get(url, headers=self.headers, verify=self.verify, params=params)
-        r_parsed = json.loads(r.content)
+        r_parsed = r.json()
         dd = pd.DataFrame(r_parsed[1:]) # skipping first row, no key
         dd.index = dd.key
         log_me("This data dict contains {} items.".format(dd.shape[0]))
@@ -204,16 +204,40 @@ class AlationInstance():
     # Return a dataframe
     #
     def download_datadict_r6(self, ds_id):
-        # url = self.host + "/data/download_dict/"
-        # form = dict(format='json', otype="data", oid=ds_id)
-        # r = requests.post(url, headers=self.headers, verify=self.verify, data=form)
-        # r_parsed = json.loads(r.content)
-        # return r_parsed
+        # The metadata APIs all require a token
         token = self.get_token()
         headers=dict(token=token)
-        schemas = dict()
-
+        # Store all elements here
         list_of_elements = list()
+
+        def download_objects(initial_url):
+            # Count all items
+            n = 0
+            log_me(f"Downloading from {initial_url}")
+            # download the initial list of objects
+            r = requests.get(url=self.host + initial_url, headers=headers)
+            if not r.status_code:
+                log_me(r.content)
+                return None # nothing
+            elements = r.json()
+            n += len(elements)
+            log_me(f"Downloaded {n} elements so far")
+
+            # if there are any more, keep going
+            while 'X-Next-Page' in r.headers:
+                r = requests.get(url=self.host + r.headers['X-Next-Page'], headers=headers)
+                if not r.status_code:
+                    log_me(r.content)
+                    break
+                n += len(r.json())
+                # Append each element to the list
+                # so the return list does not become nested
+                for e in r.json():
+                    elements.append(e)
+                log_me(f"Downloaded {n} elements so far")
+
+            # All done? Return
+            return elements
 
         # Data Source
         url = self.host + f'/integration/v1/datasource/{ds_id}'
@@ -226,11 +250,8 @@ class AlationInstance():
         ))
 
         # Schema
-        url = self.host + f'/integration/v1/schema/?ds_id={ds_id}'
-        r = requests.get(url=url, headers=headers)
-        for schema in r.json():
+        for schema in download_objects(f'/integration/v1/schema/?ds_id={ds_id}'):
             name = schema['name']
-            schemas[schema['id']] = name # we need this later
             list_of_elements.append(dict(
                 key         = f'{ds_id}.{name}',
                 title       = schema['title'],
@@ -239,9 +260,7 @@ class AlationInstance():
             ))
 
         # Table
-        url = self.host + f'/integration/v1/table/?ds_id={ds_id}'
-        r = requests.get(url=url, headers=headers)
-        for table in r.json():
+        for table in download_objects(f'/integration/v1/table/?ds_id={ds_id}'):
             name = table['name']
             schema_name = table['schema_name']
             list_of_elements.append(dict(
@@ -253,11 +272,8 @@ class AlationInstance():
             ))
 
         # Column
-        url = self.host + f'/integration/v1/column/?ds_id={ds_id}'
-        r = requests.get(url=url, headers=headers)
-        for col in r.json():
+        for col in download_objects(f'/integration/v1/column/?ds_id={ds_id}'):
             name = col['name']
-            schema_name = schemas[col['schema_id']] # unfortunately, this does not come with the API
             table_name = col['table_name'] # includes the schema already
             list_of_elements.append(dict(
                 key         = f'{ds_id}.{table_name}.{name}',
@@ -291,11 +307,11 @@ class AlationInstance():
         url = self.host + "/integration/v1/custom_template/"
         params = dict(limit=1000)
         r = requests.get(url, headers=self.headers, verify=self.verify, params=params)
-        templates = pd.DataFrame(json.loads(r.content))
+        templates = pd.DataFrame(r.json())
         templates.index = templates.id
         return templates.sort_index()
 
-    # The delete_customfield method deleted a single custom field by ID
+    # The delete_customfield method deletes a single custom field by ID
     # Note this may fail if any templates still use the custom field
     def delete_customfield(self, field_id):
         url = self.host + "/ajax/custom_field/" + str(field_id) + "/"
@@ -403,7 +419,7 @@ class AlationInstance():
         headers['Referer'] = url
 
         r = requests.post(url, data=json.dumps(payload), headers=headers, verify=self.verify)
-        if (r.status_code != 200):
+        if not r.status_code:
             raise Exception(r.text)
 
         field = json.loads(r.text)
@@ -434,7 +450,7 @@ class AlationInstance():
                 headers['Referer'] = url
 
                 r = requests.post(url, data=json.dumps(dict(custom_f)), headers=headers, verify=self.verify)
-                if r.status_code != 200:
+                if not r.status_code:
                     raise Exception(r.text)
 
                 field = json.loads(r.text)
@@ -469,7 +485,7 @@ class AlationInstance():
         headers['Referer'] = url
         log_me("Putting template {}".format(template))
         r = requests.post(url, json=payload, headers=headers, verify=self.verify)
-        if r.status_code != 200:
+        if not r.status_code:
             raise Exception(r.text)
 
         t = json.loads(r.text)
@@ -499,7 +515,7 @@ class AlationInstance():
         params = dict(replace_values=True, create_new=True)
         try:
             r = requests.post(url, data=body, headers=self.headers, params=params, verify=self.verify)
-            if r.status_code != 200:
+            if not r.status_code:
                 raise Exception(r.text)
             return r
         except IOError as e:
@@ -519,7 +535,7 @@ class AlationInstance():
         params=dict(replace_values = True, create_new = True)
         try:
             r = requests.post(url, data=article, headers=self.headers, params=params, verify=self.verify)
-            if r.status_code != 200:
+            if not r.status_code:
                 raise Exception(r.text)
             return r
         except IOError as e:
@@ -548,7 +564,7 @@ class AlationInstance():
         url = self.host + "/api/query/"
         params = dict(limit=1000, saved=True, published=True, deleted=False)
         r = requests.get(url, headers=self.headers, verify=self.verify, params=params)
-        queries = pd.DataFrame(json.loads(r.content))
+        queries = pd.DataFrame(r.json())
         queries = queries[queries.deleted==False]
         log_me("Total queries found: {}".format(queries.shape[0]))
         if 'id' in queries:
@@ -635,14 +651,14 @@ class AlationInstance():
         log_me("Getting users")
         url = self.host + "/api/user/"
         r = requests.get(url, headers=self.headers, verify=self.verify)
-        users = pd.DataFrame(json.loads(r.content))
+        users = pd.DataFrame(r.json())
         return users
 
     # The getDataSources method downloads all data sources (metadata only) as a DataFrame
     def getDataSources(self):
         url = self.host + "/ajax/datasource/"
         r = requests.get(url, headers=self.headers, verify=self.verify)
-        ds = pd.DataFrame(json.loads(r.content))
+        ds = pd.DataFrame(r.json())
         log_me("Total number of data sources: {}".format(ds.shape[0]))
         return ds
 
@@ -944,7 +960,7 @@ class AlationInstance():
         params=dict(replace_values=True, create_new=True)
         try:
             r = requests.post(url, data=body, headers=self.headers, params=params, verify=self.verify)
-            if r.status_code != 200:
+            if not r.status_code:
                 raise Exception(r.text)
             return r
         except IOError as e:
@@ -960,9 +976,9 @@ class AlationInstance():
         url = self.host + api
         try:
             r = requests.get(url, headers=self.headers, verify=self.verify)
-            if r.status_code != 200:
+            if not r.status_code:
                 raise Exception(r.text)
-            fields = pd.DataFrame(json.loads(r.content))
+            fields = pd.DataFrame(r.json())
             fields.index = fields.id
             return fields.sort_index()
         except IOError as e:
@@ -1041,9 +1057,9 @@ class AlationInstance():
         url = self.host + api
         try:
             r = requests.get(url, headers=self.headers, verify=self.verify)
-            if r.status_code != 200:
+            if not r.status_code:
                 raise Exception(r.text)
-            return json.loads(r.content)
+            return r.json()
         except IOError as e:
             log_me("I/O error({0}): {1}".format(e.errno, e.strerror))
         except ValueError:
@@ -1059,9 +1075,9 @@ class AlationInstance():
         # params=dict(replace_values = True, create_new = True)
         try:
             r = requests.get(url, headers=self.headers, verify=self.verify)
-            if r.status_code != 200:
+            if not r.status_code:
                 raise Exception(r.text)
-            a = json.loads(r.content)
+            a = r.json()
             if a['input_schema']:
                 input_schema = a['input_schema']
                 in_fields = self.recursive_field([], deque(input_schema))
@@ -1142,7 +1158,7 @@ class AlationInstance():
 
         try:
             r = requests.post(url, headers=self.headers, verify=self.verify, data=body, params=params)
-            if r.status_code != 200:
+            if not r.status_code:
                 raise Exception(r.text)
             return r.text
         except IOError as e:
@@ -1195,7 +1211,7 @@ class AlationInstance():
         )
         try:
             r = requests.post(url, json=payload, headers=self.headers, verify=self.verify)
-            if r.status_code != 200:
+            if not r.status_code:
                 raise Exception(r.text)
             # -- output_schema logical metadata ---
             extracted_logical_data_raw = self.extract_logical(api_resource['output_schema'])
