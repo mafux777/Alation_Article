@@ -71,7 +71,7 @@ class AlationInstance():
         url = self.host + "/ajax/custom_field/"
         payload = {}
         r = requests.get(url, data=json.dumps(payload), headers=self.headers, verify=self.verify)
-        if not r.status_code:
+        if r.status_code:
             fields = pd.DataFrame(r.json())
             fields.index = fields.id
             return fields.sort_index()
@@ -559,7 +559,7 @@ class AlationInstance():
 
     # The getQueries method downloads all published queries from the instance
     # returns a pandas DataFrame with the queries, sorted and indexed by ID
-    def getQueries(self):
+    def get_queries(self):
         log_me("Getting queries")
         url = self.host + "/api/query/"
         params = dict(limit=1000, saved=True, published=True, deleted=False)
@@ -592,8 +592,8 @@ class AlationInstance():
     # If an error occurs, we print one error message and ignore the rest of the queries
     # Data source IDs 1 and 10 have a special meaning for Alation Analytics and HR-VDS, related to ABOK
     # No return value.
-    def putQueries(self, queries):
-        ex_queries = self.getQueries()
+    def put_queries(self, queries):
+        ex_queries = self.get_queries()
         url = self.host + "/api/query/"
 
         datasource_with_errors = {}
@@ -618,7 +618,7 @@ class AlationInstance():
                     body = {}
                     body['content'] = single_query.published_content
                     body['published_content'] = single_query.published_content
-                    if ori_ds_id==1 and aa: # Alation Analytics!
+                    if ori_ds_id==2 and aa: # Alation Analytics!
                         body['ds_id'] = int(aa)
                     elif ori_ds_id==10 and hr: # HR Database
                         body['ds_id'] = int(hr)
@@ -783,7 +783,7 @@ class AlationInstance():
         log_me("----- Pass 2: Getting all Articles, Queries -----")
         # Get a handle on all the articles on the source instance
         articles = self.get_articles(template=template)
-        queries = self.getQueries()
+        queries = self.get_queries()
         # Initialise them as not updated
         articles['updated'] = False
         # Go through all the articles which may contain references
@@ -862,7 +862,7 @@ class AlationInstance():
         log_me("Finished preparing references. ")
 
 
-    # The fix_refs_2 method finds at-mentions in a description and sets them to 0
+    # The fix_refs_2 method finds at-mentions in a description and sets data-oid to appropriate value (if found)
     # and adds the title of the linked object
     # description: the string which gets searched for at-mentions
     # queries: queries that may be linked (can be empty, but not None)
@@ -942,7 +942,7 @@ class AlationInstance():
 
         if ds_title == "Alation Analytics":
             log_me("----- Working on DD description fields -----")
-            queries = self.getQueries()
+            queries = self.get_queries()
             dd['description'] = dd.description.apply(self.fix_refs_2, queries=queries, ori_title="DD")
 
         for id, obj in dd.iterrows():
