@@ -1233,3 +1233,29 @@ class AlationInstance():
             log_me("I/O error({0}): {1}".format(e.errno, e.strerror))
         except ValueError:
             log_me("Could not convert data to an integer.")
+
+    def update_custom_field(self, o_type, o_id,field_id, update):
+        url = f"{self.host}/api/field/object/{o_type}/{o_id}/{field_id}/commit/"
+        body=dict(op='replace', value=update)
+        r = requests.post(url=url, json=body, headers=self.headers, verify=self.verify)
+        pass
+
+    def get_dataflows(self):
+        res = []
+        log_me("Getting DataFlows")
+        for i in range(1, 1000):
+            r = requests.get(url=f"{self.host}/api/dataflow/{i}/",
+                             headers=self.headers, verify=self.verify)
+            if not r.status_code:
+                break
+            d = r.json()
+            if not 'id' in d:
+                break
+            if i==1:
+                log_me(f"Available fields: {d.keys()}")
+            res.append(d)
+        res_pd = pd.DataFrame(res)
+        res_pd.index = res_pd.id
+        log_me(f"Downloaded {i-1} DataFlows")
+
+        return res_pd

@@ -34,8 +34,12 @@ if __name__ == "__main__":
 
     # --- Log into the source instance
     alation_1 = AlationInstance(url_1, user_1, passwd_1)
-    dd = alation_1.download_datadict_r6(2) # Alation Analytics is 1 on ABOK
-    dd.to_csv("dd.csv", index=False)
+    #dd = alation_1.download_datadict_r6(2) # Alation Analytics is 1 on ABOK
+    #dd.to_csv("dd.csv", index=False)
+    df = alation_1.get_dataflows()
+    for d in df.index:
+        alation_1.update_custom_field("dataflow",d,4, f"Desc changed via API: {df.at[d, 'external_id']}")
+    #alation_1.update_custom_field(10007, "<p>Some migration notes</p>")
 
     # --- Log into the target instance
     url_2    = args['host2']
@@ -50,7 +54,7 @@ if __name__ == "__main__":
     allArticles['body'] = allArticles.body.apply(lambda x: x.replace('https://abok.alationproserv.com', ''))
     Art = Article(allArticles)                    # convert to Article class
     #Art.to_csv('ABOK_art.csv')
-    queries = alation_1.getQueries()
+    queries = alation_1.get_queries()
     #author = queries.author.apply(lambda x: x['id'] not in [1,5])
     #queries = queries[author]
 
