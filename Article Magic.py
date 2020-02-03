@@ -38,7 +38,8 @@ if __name__ == "__main__":
     #dd.to_csv("dd.csv", index=False)
     df = alation_1.get_dataflows()
     for d in df.index:
-        alation_1.update_custom_field("dataflow",d,4, f"Desc changed via API: {df.at[d, 'external_id']}")
+        alation_1.update_custom_field("dataflow", d, 4, f"Desc changed via API: {df.at[d, 'external_id']}")
+        alation_1.update_custom_field("dataflow", d, 3, f"Title: {df.at[d, 'external_id']}")
     #alation_1.update_custom_field(10007, "<p>Some migration notes</p>")
 
     # --- Log into the target instance

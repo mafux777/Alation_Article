@@ -1234,12 +1234,23 @@ class AlationInstance():
         except ValueError:
             log_me("Could not convert data to an integer.")
 
+    # The update_custom_field method lets you change the value of a single custom field
+    # belonging to a single Alation object
+    # o_type: Alation Object Type, e.g. "dataflow"
+    # o_id: Alation ID, e.g. 1
+    # field_id: each custom field has an ID, check self.custom_fields. Title=3, Description=4, etc.
+    # update: for a text field, a string. For a reference, a dict
     def update_custom_field(self, o_type, o_id,field_id, update):
         url = f"{self.host}/api/field/object/{o_type}/{o_id}/{field_id}/commit/"
         body=dict(op='replace', value=update)
         r = requests.post(url=url, json=body, headers=self.headers, verify=self.verify)
         pass
 
+    # The get_dataflows method downloads all existing DataFlows, assuming the first one has ID 1
+    # and there are only 1000.
+    # Note this is pretty crude approach, taking about 1/2 second per DataFlow
+    # Result is a DataFrame with the following columns:
+    # ['id', 'content', 'creation_type', 'external_id', 'data_input', 'data_output', 'fp', 'otype', 'url']
     def get_dataflows(self):
         res = []
         log_me("Getting DataFlows")
