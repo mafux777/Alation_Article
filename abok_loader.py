@@ -59,8 +59,8 @@ if __name__ == "__main__":
     templates = target.get_templates()
     template_id = int(templates[templates.title==desired_template]['id'])
 
-    target.putQueries(queries=queries)
-    queries = target.getQueries() # this is so we can figure out the number
+    target.put_queries(queries=queries)
+    queries = target.get_queries() # this is so we can figure out the number
 
     order = check_sequence(allArticles, first=1889)
     dummy = target.post_article(dict(title="dummy {}".format(

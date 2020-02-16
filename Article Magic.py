@@ -36,12 +36,13 @@ if __name__ == "__main__":
     alation_1 = AlationInstance(url_1, user_1, passwd_1)
     #dd = alation_1.download_datadict_r6(2) # Alation Analytics is 1 on ABOK
     #dd.to_csv("dd.csv", index=False)
-    df = alation_1.get_dataflows()
-    for d in df.index:
-        alation_1.update_custom_field("dataflow", d, 4, f"Desc changed via API: {df.at[d, 'external_id']}")
-        alation_1.update_custom_field("dataflow", d, 3, f"Title: {df.at[d, 'external_id']}")
-    #alation_1.update_custom_field(10007, "<p>Some migration notes</p>")
-
+    # df = alation_1.get_dataflows()
+    # for d in df.index:
+    #     alation_1.update_custom_field("dataflow", d, 4, f"Desc changed via API: {df.at[d, 'external_id']}")
+    #     alation_1.update_custom_field("dataflow", d, 3, f"Title: {df.at[d, 'external_id']}")
+    alation_1.update_custom_field("bi_folder", 366, 10019, "Distribution")
+    # https://r7-beta.alationcatalog.com/bi/v2/datasource_column/3445/
+    alation_1.update_custom_field("bi_datasource_column", 3445, 4, "<p>Cost of Goods Sold is calculated so and so</p>")
     # --- Log into the target instance
     url_2    = args['host2']
     user_2   = args['username2']

@@ -28,6 +28,7 @@ class AlationInstance():
         self.verify = verify
         self.email = email
         self.password = password
+        self.token = self.get_token()
         self.headers = self.login(email, password)
         log_me("Getting existing custom fields")
         self.existing_fields = self.get_custom_fields() # store existing custom fields
@@ -37,6 +38,16 @@ class AlationInstance():
         self.ds = self.getDataSources()
         self.articles = pd.DataFrame() # cache for Articles
         log_me(self.ds.loc[ : , ['id', 'title']].head(10))
+
+    def get_token(self):
+        URL = self.host + '/api/v1/changeToken/'
+
+        # login with user name and password (and token)
+        payload = {"username": self.email, "password": self.password}
+        r = requests.post(URL, data=payload)
+        #headers = dict(token=r.text)
+        return r.text
+
     # The login method is used to obtain a session ID and relevant cookies
     # They are cached in the headers variable
     # email: the up to 30 chars user name, often the email, but for long emails could be cut off
@@ -1270,3 +1281,43 @@ class AlationInstance():
         log_me(f"Downloaded {i-1} DataFlows")
 
         return res_pd
+
+    def generic_api_post(self, api, params=None, body=None):
+        URL = self.host + api
+        r = requests.post(URL, json=body, params=params, headers=self.headers)
+
+        if r.status_code:
+            r_parsed = r.json()
+            # do we need to ask the job status API for help?
+            if 'job_id' in r_parsed:
+                params = dict(id=r_parsed['job_id'])
+                url_job = "/api/v1/bulk_metadata/job/"
+                # Let's wait for the job to finish
+                while (True):
+                    status = self.generic_api_get(api=url_job, params=params, official=True)
+                    if status['status'] != 'running':
+                        objects = status['result']
+                        # if objects:
+                        #     # for error in error_objects:
+                        #     print(objects)
+                        # else:
+                        #     #print(status)
+                        #     pass
+                        break
+                r_parsed = status
+            return r_parsed
+        else:
+            return r.content
+
+    def generic_api_get(self, api,params=None, official=False):
+        URL = self.host + api
+
+        if official:
+            r = requests.get(URL, headers=dict(token=self.token), params=params)
+        else:
+            r = requests.get(URL, headers=self.headers, params=params)
+        if r.status_code in [200, 201]:
+            return r.json()
+        else:
+            return r.content
+
