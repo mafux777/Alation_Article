@@ -7,17 +7,11 @@
 #
 #********************************************************************************************************
 
-import requests
-import json
-import unicodedata
-from bs4 import BeautifulSoup
 import re
-import sys
-import argparse
 import pdfkit
 from alationutil import *
 import os
-from pathlib import PurePath, Path
+from pathlib import Path
 
 def clean_up(html):
     soup = BeautifulSoup(html, "html5lib")
@@ -28,7 +22,7 @@ def clean_up(html):
     links = soup.findAll('a')
     for a in links:
         # Let's remove all hyperlinks to Alation Objects only
-        if u"data-otype" in a.attrs:
+        if "data-otype" in a.attrs:
             if a.string:
                 # "m" is a convenience tag which has no effect
                 n = a.string.wrap(soup.new_tag("m"))

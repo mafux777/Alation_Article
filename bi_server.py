@@ -8,9 +8,9 @@ from alationutil import log_me
 
 file_key = ''.join(random.sample("ABCDEFGHJKLMNPQRSTUVWXYZ0123456789", 4))
 
-base_url = ''
-username = ''
-password = ''
+base_url = 'http://18.218.6.215'
+username = 'matthias.funke@alation.com'
+password = 'm9kBYH;i7cQ;C'
 
 def add_table_row(key, value):
     return "<tr><td> {} </td><td> {} </td></tr>".format(key, value)

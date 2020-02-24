@@ -23,13 +23,13 @@ class AlationInstance():
     # password: could be the LDAP password, as well
     # verify: Requests verifies SSL certificates for HTTPS requests, just like a web browser.
     # By default, SSL verification is enabled, and Requests will throw a SSLError if it’s unable to verify the certificate
-    def __init__(self, host, email, password, verify=True):
+    def __init__(self, host, account, password, verify=True):
         self.host = host
         self.verify = verify
-        self.email = email
+        self.account = account
         self.password = password
         self.token = self.get_token()
-        self.headers = self.login(email, password)
+        self.headers = self.login(account, password)
         log_me("Getting existing custom fields")
         self.existing_fields = self.get_custom_fields() # store existing custom fields
         log_me("Getting existing templates")
@@ -39,20 +39,11 @@ class AlationInstance():
         self.articles = pd.DataFrame() # cache for Articles
         log_me(self.ds.loc[ : , ['id', 'title']].head(10))
 
-    def get_token(self):
-        URL = self.host + '/api/v1/changeToken/'
-
-        # login with user name and password (and token)
-        payload = {"username": self.email, "password": self.password}
-        r = requests.post(URL, data=payload)
-        #headers = dict(token=r.text)
-        return r.text
-
     # The login method is used to obtain a session ID and relevant cookies
     # They are cached in the headers variable
-    # email: the up to 30 chars user name, often the email, but for long emails could be cut off
+    # account: the up to 30 chars user name, often the email, but for long emails could be cut off
     # password: could be the LDAP password, as well
-    def login(self, email, password):
+    def login(self, account, password):
         URL = self.host + '/login/'
 
         s = requests.Session()
@@ -62,7 +53,7 @@ class AlationInstance():
         csrftoken = s.cookies.get('csrftoken')
 
         # login with user name and password (and token)
-        payload = {"csrfmiddlewaretoken": csrftoken, "ldap_user": email, "password": password}
+        payload = {"csrfmiddlewaretoken": csrftoken, "ldap_user": account, "password": password}
         headers = {"Referer": URL}
         log_me("Logging in to {}".format(URL))
         r = s.post(URL, data=payload, verify=self.verify, headers=headers)
@@ -70,7 +61,7 @@ class AlationInstance():
         # get the session ID and store it for all future API calls
         sessionid = s.cookies.get('sessionid')
         headers = {"X-CSRFToken": csrftoken,
-                   "Cookie": "csrftoken=" + csrftoken + "; sessionid=" + sessionid,
+                   "Cookie": f"csrftoken={csrftoken}; sessionid={sessionid}",
                    "Referer": URL
                    }
 
@@ -79,22 +70,16 @@ class AlationInstance():
     # The get_custom_fields method returns a pandas DataFrame with all custom fields
     # The Alation ID will also be the ID of the DataFrame
     def get_custom_fields(self, template='all'): # this method returns a DataFrame
-        url = self.host + "/ajax/custom_field/"
-        payload = {}
-        r = requests.get(url, data=json.dumps(payload), headers=self.headers, verify=self.verify)
-        if r.status_code:
-            fields = pd.DataFrame(r.json())
-            fields.index = fields.id
-            return fields.sort_index()
-        else:
-            log_me("Could not get custom fields: {}".format(r.content))
+        fields = pd.DataFrame(self.generic_api_get("/ajax/custom_field/"))
+        fields.index = fields.id
+        return fields.sort_index()
 
     # The get_custom_field_id methdod checks whether a field with that name already exists
     # If yes, returns the ID
     # If no, returns 0
     def get_custom_field_id(self, name):
         if name in self.existing_fields.name:
-            return self.existing_fields[self.existing_fields.name==name, "id"]
+            return self.existing_fields[self.existing_fields.name == name, "id"]
         else:
             return 0
 
@@ -106,7 +91,6 @@ class AlationInstance():
     # returns a pandas DataFrame
     def get_articles(self, template='all', limit=100):
         log_me("Getting Articles from Instance")
-        url = self.host + "/integration/v1/article/"
         skip = 0
         articles = pd.DataFrame()
         params = {}
@@ -123,10 +107,10 @@ class AlationInstance():
                 params['limit'] = limit
                 params['skip'] = skip
                 t0 = time.time()
-                r = requests.get(url, headers=self.headers, verify=self.verify, params=params)
+                r = self.generic_api_get("/integration/v1/article/", params=params)
                 skip = skip + limit
                 # create the DataFrame and index it properly
-                article_chunk = pd.DataFrame(r.json())
+                article_chunk = pd.DataFrame(r)
                 # re-use the article ID as the index of the DataFrame
                 article_chunk.index = article_chunk.id
                 articles = articles.append(article_chunk)
@@ -143,18 +127,16 @@ class AlationInstance():
     # The get_tables_by_name method returns an (empty) DataFrame for all tables with the same exact name (if found)
     # name: name to search for, consisting of schema.name
     def get_tables_by_name(self, name):
-        url = self.host + "/integration/v1/table/"
         components = name.split('.')
         schema_name = components[0]
         table_name  = components[1]
         params = dict(name=table_name, schema_name=schema_name)
-        r = requests.get(url, headers=self.headers, verify=self.verify, params=params)
         # create the DataFrame and index it properly
-        table_with_name = pd.DataFrame(r.json())
+        table_with_name = pd.DataFrame(self.generic_api_get("/integration/v1/table/", params=params))
         size = table_with_name.shape[0]
         if size>0:
             table_with_name.index = table_with_name.id
-            return table_with_name[table_with_name.name==table_name]
+            return table_with_name[table_with_name.name == table_name]
         else:
             #log_me("Could not find table {}".format(name))
             return pd.DataFrame()
@@ -162,19 +144,14 @@ class AlationInstance():
     # The get_article_by_id method returns a dictionary with all the article attributes provided by the Article API
     # ID: the numerical ID of an existing article
     def get_article_by_id(self, id):
-        url = self.host + "/integration/v1/article/" + str(id) + "/"
-        r = requests.get(url, headers=self.headers, verify=self.verify)
         # return a dictionary
-        article = r.json()
+        article = self.generic_api_get(f'/integration/v1/article/{id}/')
         return article
 
     # The post_article method creates a new article based on a dictionary with at least title and body
     # and returns a dictionary with all attributes, e.g. id, author, timestamp, etc.
     def post_article(self, article):
-        url = self.host + "/integration/v1/article/"
-        r = requests.post(url, headers=self.headers, verify=self.verify, json=dict(article))
-        # return a dictionary
-        art = r.json()
+        art = self.generic_api_post(api="/integration/v1/article/", body=dict(article))
         return art
 
     # The del_article method deletes an existing article and returns nothing
@@ -201,13 +178,12 @@ class AlationInstance():
     # The download_datadict method returns a pandas DataFrame with key, title and description for a specific data source
     # This only works until R5 (inclusive)
     def download_datadict(self, ds_id):
-        url = self.host + "/data/"+str(ds_id)+"/download_dict/data/"+str(ds_id)+"/"
+        api = f"/data/{ds_id}/download_dict/data/{ds_id}/"
         params = dict(format='json')
-        r = requests.get(url, headers=self.headers, verify=self.verify, params=params)
-        r_parsed = r.json()
-        dd = pd.DataFrame(r_parsed[1:]) # skipping first row, no key
+        r = self.generic_api_get(api, params=params)
+        dd = pd.DataFrame(r[1:]) # skipping first row, no key
         dd.index = dd.key
-        log_me("This data dict contains {} items.".format(dd.shape[0]))
+        log_me(f"This data dict contains {dd.shape[0]} items.")
         return dd.loc[:, ['key', 'title', 'description']]
 
     # The download_datadict_r6 uses the metadata API to download a data dictionary
@@ -304,7 +280,7 @@ class AlationInstance():
     def get_token(self):
         change_token = "/api/v1/changeToken/"  # if you already have a token, use this url
         new_token = "/api/v1/getToken/"  # if you have never generated a token, use this url
-        data = dict(username=self.email, password=self.password)
+        data = dict(username=self.account, password=self.password)
         response = requests.post(self.host + new_token, data=data)
         api_token = response.text
         if api_token == "EXISTING":
@@ -315,10 +291,8 @@ class AlationInstance():
     # The get_templates method returns a DataFrame with all templates, sorted and indexed by ID
     # This includes built-in templates
     def get_templates(self):
-        url = self.host + "/integration/v1/custom_template/"
-        params = dict(limit=1000)
-        r = requests.get(url, headers=self.headers, verify=self.verify, params=params)
-        templates = pd.DataFrame(r.json())
+        api = "/integration/v1/custom_template/"
+        templates = pd.DataFrame(self.generic_api_get(api))
         templates.index = templates.id
         return templates.sort_index()
 
@@ -335,10 +309,7 @@ class AlationInstance():
     # return value: none
     def add_customfield_to_template(self, template_id, field_id): #takes only one field
         # get details about the template first
-        r = requests.get(self.host + "/ajax/custom_template/" + str(template_id) + "/",
-                         headers=self.headers, verify=self.verify)
-
-        template = json.loads(r.text)
+        template = self.generic_api_get(f"/ajax/custom_template/{template_id}/")
         # copy details of the template into the payload
         keys = ["id", "title", "builtin_name", "field_ids", "template_in_use"]
         payload = {}
@@ -422,18 +393,9 @@ class AlationInstance():
             "value": None,
         }
 
-        log_me("Creating a new custom field {}".format(name_singular))
+        log_me(f"Creating a new custom field {name_singular}")
 
-        url = self.host + "/ajax/custom_field/"
-
-        headers = self.headers
-        headers['Referer'] = url
-
-        r = requests.post(url, data=json.dumps(payload), headers=headers, verify=self.verify)
-        if not r.status_code:
-            raise Exception(r.text)
-
-        field = json.loads(r.text)
+        field = self.generic_api_post("/ajax/custom_field/", body=payload)
         return field['id']
 
     # The put_custom_fields method takes a DataFrame with custom fields and creates them one by one,
@@ -441,35 +403,39 @@ class AlationInstance():
     # In many cases the source of the custom fields DataFrame would be a call to the Template API
     # Otherwise you would use the method above: create_customfield
     def put_custom_fields(self, custom_fields_pd):  # takes a DataFrame obtained from the Template API
+        # Go through the custom fields DataFrame row by row. Each row is a dict-like object
         def process_line(custom_f):
-            field_exists = self.existing_fields.loc[self.existing_fields.name_singular==custom_f['name_singular']]
+            #log_me(f'Processing {custom_f}')
+            # Since AlationInstance keeps track of existing custom fields, we can easily check if this field
+            # already exists. We use the name_singular field and check for a match.
+            # The resulting DataFrame can have 0 matches, 1, or multiple
+            match = self.existing_fields.name_singular.eq(custom_f['name_singular'])
+            field_exists = self.existing_fields.loc[match]
             # should return only one row if the field exists already
-            if len(field_exists)==0:
+            # no match at all? Let's create the field
+            if not match.any():
                 log_me("Putting custom field {}".format(custom_f['name_singular']))
                 if custom_f['options']:
-                    if isinstance(custom_f['options'], str): # came from CSV
-                        custom_f['options'] = custom_f['options'].split(",")
-                    custom_f['options'] = json.dumps(
-                    [{"title": option, "tooltip_text": None, "old_index": None, "article_id": None} \
-                     for option in custom_f['options']])
+                # have also changed the JSON handling
+                    custom_f['options'] = json.dumps([{"title": option, "tooltip_text": None, "old_index": None, "article_id": None}\
+                                           for option in custom_f['options']])
                 custom_f['field_otype']='custom_field'
                 custom_f['value']=None
                 custom_f['name']=None
-                url = self.host + "/ajax/custom_field/"
 
-                headers = self.headers
-                headers['Referer'] = url
+                body = dict(custom_f)
 
-                r = requests.post(url, data=json.dumps(dict(custom_f)), headers=headers, verify=self.verify)
-                if not r.status_code:
-                    raise Exception(r.text)
-
-                field = json.loads(r.text)
-                self.existing_fields = self.get_custom_fields() # so we don't get a duplicate next time (could be more efficient)
+                field = self.generic_api_post(api="/ajax/custom_field/", body=body)
+                # so we don't get a duplicate next time (could be more efficient)
+                # the lazy way: just download all fields again
+                self.existing_fields = self.get_custom_fields()
                 return field['id']
             elif len(field_exists)==1:
-                log_me("{} already exists (info only)".format(field_exists.iloc[0, 6]))
-                return field_exists.iloc[0]['id']  # ID of the field
+                name = field_exists.at[match.idxmax(), 'name']
+                id = field_exists.at[match.idxmax(), 'id']
+
+                log_me(f"{id}/{name} already exists (info only)")
+                return id  # ID of the field
             else:
                 log_me("WARNING -- MULTIPLE FIELDS WITH THE SAME NAME")
                 log_me(field_exists.loc[:,['id', 'name']])
@@ -484,26 +450,18 @@ class AlationInstance():
     # fields: a list of field IDs
     # returns the ID of the newly created template
     def put_custom_template(self, template, fields=[]):
-        url = self.host + "/ajax/custom_template/"
-
-        keys = ["id", "title", "builtin_name", "field_ids", "template_in_use"]
-        payload = {}
-
-        payload['fields'] = []
-        payload['title'] = template
-        url = self.host + "/ajax/custom_template/"
-        headers = self.headers
-        headers['Referer'] = url
-        log_me("Putting template {}".format(template))
-        r = requests.post(url, json=payload, headers=headers, verify=self.verify)
-        if not r.status_code:
-            raise Exception(r.text)
-
-        t = json.loads(r.text)
-        self.existing_templates = self.get_templates()  # so we don't get a duplicate next time (could be more efficient)
-        if len(fields)>0:
-            self.add_customfields_to_template(t['id'], fields)
-        return t['id']
+        match = self.existing_templates.title.eq(template)
+        if match.any():
+            return self.existing_templates.id[match.idxmax()]
+        else:
+            payload = dict(fields=[])
+            payload['title'] = template
+            log_me(f"Putting template {template}")
+            t = self.generic_api_post("/ajax/custom_template/", body=payload)
+            self.existing_templates = self.get_templates()  # so we don't get a duplicate next time (could be more efficient)
+            if len(fields)>0:
+                self.add_customfields_to_template(t['id'], fields)
+            return t['id']
 
     # The put_articles method prepares the Articles and uploads via Bulk API
     # article: an instance of the Article class (essentially a pandas DataFrame with all articles
@@ -520,19 +478,14 @@ class AlationInstance():
             body = article.bulk_api_body()
         else:
         # Body needs to be a text with one JSON per line
-        # Note we are sending all custom fields to the function, maybe overkill!
+        # Note we are (no longer)sending all custom fields to the function
             custom_fields_pd = self.existing_fields.loc[custom_fields, :]
-            body = article.bulk_api_body(custom_fields_pd)
+            body = article.bulk_api_body()
         params = dict(replace_values=True, create_new=True)
-        try:
-            r = requests.post(url, data=body, headers=self.headers, params=params, verify=self.verify)
-            if not r.status_code:
-                raise Exception(r.text)
-            return r
-        except IOError as e:
-            log_me("I/O error({0}): {1}".format(e.errno, e.strerror))
-        except Exception as e:
-            log_me(f"Unexpected {e}")
+        r = requests.post(url, data=body, headers=self.headers, params=params, verify=self.verify)
+        if not r.status_code:
+            log_me(f'Error uploading articles: {r.content}')
+        return r
 
     # The put_articles_2 method is a simplified version of the method above
     # article: expects a ready made JSON for the body (one JSON per line=article)
@@ -543,7 +496,7 @@ class AlationInstance():
         # Template name needs to be part of the URL
         template_name = template_name.replace(" ", "%20")
         url = self.host + "/api/v1/bulk_metadata/custom_fields/" + template_name + "/article"
-        params=dict(replace_values = True, create_new = True)
+        params = dict(replace_values=True, create_new=True)
         try:
             r = requests.post(url, data=article, headers=self.headers, params=params, verify=self.verify)
             if not r.status_code:
@@ -572,10 +525,8 @@ class AlationInstance():
     # returns a pandas DataFrame with the queries, sorted and indexed by ID
     def get_queries(self):
         log_me("Getting queries")
-        url = self.host + "/api/query/"
         params = dict(limit=1000, saved=True, published=True, deleted=False)
-        r = requests.get(url, headers=self.headers, verify=self.verify, params=params)
-        queries = pd.DataFrame(r.json())
+        queries = pd.DataFrame(self.generic_api_get("/api/query/", params=params))
         queries = queries[queries.deleted==False]
         log_me("Total queries found: {}".format(queries.shape[0]))
         if 'id' in queries:
@@ -667,12 +618,9 @@ class AlationInstance():
 
     # The getDataSources method downloads all data sources (metadata only) as a DataFrame
     def getDataSources(self):
-        url = self.host + "/ajax/datasource/"
-        r = requests.get(url, headers=self.headers, verify=self.verify)
-        ds = pd.DataFrame(r.json())
+        ds = pd.DataFrame(self.generic_api_get("/ajax/datasource/"))
         log_me("Total number of data sources: {}".format(ds.shape[0]))
         return ds
-
 
     # The look_up_ds_by_name method returns the data source ID of a data source by title
     # or None if not found
@@ -822,24 +770,24 @@ class AlationInstance():
                     # Process links to articles
                     if otype == 'article':
                         try:
-                            art_match = articles.title==title
+                            art_match = articles.title.eq(title)
                             if art_match.any():
                                 # m is a reference to somewhere and we need to fix it.
                                 oid = articles.id[art_match.idxmax()]
                                 m['data-oid'] = oid
-                                m['href'] = "/{}/{}/".format(otype, oid)
+                                m['href'] = f'/{otype}/{oid}/'
 
                                 articles.at[id, 'body'] = soup.prettify()  # update the article body
                                 articles.at[id, 'updated'] = True  # update the article body
                                 update_needed = True
                                 # log_me("Article match for {} -> {}/{}".format(t, title, oid))
                             else:
-                                log_me("No article match for {}->{}".format(t, title))
+                                log_me(f'No article match for {t}->{title}')
                         except:
-                            log_me("Exception trying to match {} -> {}".format(t, title))
+                            log_me(f'Exception trying to match {t}->{title}')
                     # Process links to queries
                     elif otype == 'query' and not queries.empty:
-                        q_match = queries.title == title
+                        q_match = queries.title.eq(title)
                         if q_match.any():
                             matching_queries = queries[q_match]
                             # m is a reference to somewhere and we need to fix it.
@@ -865,7 +813,7 @@ class AlationInstance():
                             articles.at[id, 'updated'] = True  # update the article body
                             update_needed = True
                         else:
-                            log_me("No match for {}".format(title))
+                            log_me(f"No match for {title}")
             if update_needed:
                 log_me("Updating article {}:{} -> {}".format(id, t, title))
                 new_article = dict(body=articles.at[id, 'body'], title=t)  # only the required fields...
@@ -976,29 +924,15 @@ class AlationInstance():
             return r
         except IOError as e:
             log_me("I/O error({0}): {1}".format(e.errno, e.strerror))
-        except ValueError:
-            log_me("Could not convert data to an integer.")
 
     # This method gets all API resources in a DataFrame
     # The information is limited, so this is only a helper function for
     # entire_api
     def get_api_resource_all(self):
         api = "/integration/v1/api_resource/"
-        url = self.host + api
-        try:
-            r = requests.get(url, headers=self.headers, verify=self.verify)
-            if not r.status_code:
-                raise Exception(r.text)
-            fields = pd.DataFrame(r.json())
-            fields.index = fields.id
-            return fields.sort_index()
-        except IOError as e:
-            log_me("I/O error({0}): {1}".format(e.errno, e.strerror))
-        except ValueError:
-            log_me("Could not convert data to an integer.")
-        except:
-            log_me("Unexpected error: {}".format(sys.exc_info()[0]))
-            raise
+        fields = pd.DataFrame(self.generic_api_get(api=api))
+        fields.index = fields.id
+        return fields.sort_index()
 
     # This method untangles the dictionary with the resource fields
     # The result is a flattened list of dictionaries, which can be
@@ -1016,13 +950,6 @@ class AlationInstance():
             return list_so_far # finished
         return self.recursive_field(list_so_far, field)
 
-    # def extract_logical(self, api_dict):
-    #     if "properties" in api_dict: # like children
-    #         [self.extract_logical(p) for p in api_dict['properties']]
-    #     else: # at the end of the tree...
-    #         return dict(key=api_dict['key'],
-    #                    title=api_dict['title'],
-    #                    description=api_dict['description'])
 
 
     # This recursive function is designed to encode an existing dictionary coming from get_api_resource
@@ -1106,10 +1033,8 @@ class AlationInstance():
             return api_fields.sort_index()
         except IOError as e:
             log_me("I/O error({0}): {1}".format(e.errno, e.strerror))
-        except ValueError:
-            log_me("Could not convert data to an integer.")
         except:
-            log_me("Unexpected error: {}".format(sys.exc_info()[0]))
+            log_me("Unexpected error")
             raise
     # a utility function to create a list of items and fix list in list
     def flatten(self, l, ltypes=(list, tuple)):
@@ -1242,8 +1167,6 @@ class AlationInstance():
             return return_text
         except IOError as e:
             log_me("I/O error({0}): {1}".format(e.errno, e.strerror))
-        except ValueError:
-            log_me("Could not convert data to an integer.")
 
     # The update_custom_field method lets you change the value of a single custom field
     # belonging to a single Alation object
@@ -1252,10 +1175,9 @@ class AlationInstance():
     # field_id: each custom field has an ID, check self.custom_fields. Title=3, Description=4, etc.
     # update: for a text field, a string. For a reference, a dict
     def update_custom_field(self, o_type, o_id,field_id, update):
-        url = f"{self.host}/api/field/object/{o_type}/{o_id}/{field_id}/commit/"
+        api = f"/api/field/object/{o_type}/{o_id}/{field_id}/commit/"
         body=dict(op='replace', value=update)
-        r = requests.post(url=url, json=body, headers=self.headers, verify=self.verify)
-        pass
+        self.generic_api_post(api, body=body)
 
     # The get_dataflows method downloads all existing DataFlows, assuming the first one has ID 1
     # and there are only 1000.
@@ -1266,14 +1188,10 @@ class AlationInstance():
         res = []
         log_me("Getting DataFlows")
         for i in range(1, 1000):
-            r = requests.get(url=f"{self.host}/api/dataflow/{i}/",
-                             headers=self.headers, verify=self.verify)
-            if not r.status_code:
-                break
-            d = r.json()
+            d = self.generic_api_get(api=f"/api/dataflow/{i}/")
             if not 'id' in d:
                 break
-            if i==1:
+            if i == 1:
                 log_me(f"Available fields: {d.keys()}")
             res.append(d)
         res_pd = pd.DataFrame(res)
@@ -1281,10 +1199,9 @@ class AlationInstance():
         log_me(f"Downloaded {i-1} DataFlows")
 
         return res_pd
-
+    # The generic_api_post method posts a request to Alation and if necessary checks the status
     def generic_api_post(self, api, params=None, body=None):
-        URL = self.host + api
-        r = requests.post(URL, json=body, params=params, headers=self.headers)
+        r = requests.post(self.host + api, json=body, params=params, headers=self.headers)
 
         if r.status_code:
             r_parsed = r.json()
@@ -1309,13 +1226,19 @@ class AlationInstance():
         else:
             return r.content
 
-    def generic_api_get(self, api,params=None, official=False):
-        URL = self.host + api
-
-        if official:
-            r = requests.get(URL, headers=dict(token=self.token), params=params)
+    # The generic_api_get implements a REST get, with API token if official or Cookie if not.
+    # If the callers sends header, it needs to contain API or cookie
+    def generic_api_get(self, api, headers=None, params=None, official=False):
+        if headers:
+            # caller has supplied the headers
+            headers_final = headers
         else:
-            r = requests.get(URL, headers=self.headers, params=params)
+            if official:
+                headers_final = dict(token=self.token)
+            else:
+                headers_final = self.headers
+                headers_final['Referer'] = self.host + api
+        r = requests.get(self.host + api, headers=headers_final, params=params)
         if r.status_code in [200, 201]:
             return r.json()
         else:

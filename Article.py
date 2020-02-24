@@ -1,17 +1,13 @@
-import json
-import re
-
 import pandas as pd
 import datetime
-import os
-import pdfkit
 import abok
+import json
 from bs4 import BeautifulSoup
 
-from alationutil import *
-from collections import OrderedDict, deque
+from alationutil import log_me, unpack_id, unpack_title, unpack_children
+from collections import deque
 
-
+# The Article class is a DataFrame of Articles with some additional functionality
 class Article():
     # This is the constructor
     # Assigns the ID to the index
@@ -32,14 +28,16 @@ class Article():
             #del article['children']
         if 'custom_fields' in article:
             def extract_custom(art): # article is now one dict per article
-                f = art['custom_fields'] # f is now a list with only the custom fields (each is a dict)
-                for i in f:
+                for field in art['custom_fields']:
                     # create a new key for custom field
-                    if i['value_type'] in ['picker', 'multi_picker', 'date', 'rich_text']:
-                        art[i['field_name']] = i['value']
+                    # the value type is not needed for (multi-)picker, date and rich text
+                    # this will be one column with the value
+                    if field['value_type'] in ['picker', 'multi_picker', 'date', 'rich_text']:
+                        art[field['field_name']] = field['value']
                     else:
-                        art[i['field_name'] + ':' + 'type'] = i['value_type']
-                        art[i['field_name'] + ':' + 'key' ] = i['value']
+                        # This will be two columns, one with the type, and one with the value
+                        art[field['field_name'] + ':' + 'type'] = field['value_type']
+                        art[field['field_name'] + ':' + 'key' ] = field['value']
                     # assumes each custom field only appears once in each article
                 return art
 
@@ -57,84 +55,52 @@ class Article():
 
     # converts the Article into a JSON accepted by the Bulk API
     # encapsulates the custom fields (tricky part)
-    def bulk_api_body(self, custom_fields=pd.DataFrame()): # expects a DataFrame with relevant custom fields
+    # this code does not take advantage of the flattening that happened during construction time
+    # instead, we use the original contents of the custom fields column
+    def bulk_api_body(self):
         log_me("Creating Body for Bulk API")
         body = ""
+        # Iterate through all the articles
         for id, article in self.article.iterrows():
-            d = article['body']
-            k = article['title']
-            #log_me(u"Working on {}/{}".format(d, k))
-            new_row = dict(description=d, key=k)
-            new_row[u'Migration Notes'] = u"<ul>"
-            # loop thru articles 1 by 1
-            for j, field in custom_fields.iterrows():
-                #log_me(u"Looping through...{}/{}".format(j, field))
-                # loop thru all fields we expect
-                f = article['custom_fields'] # f is now a list with only the custom fields (each is a dict)
-                if field['allow_multiple']:
-                    name = field['name_singular']
-                    new_row[name] = []
-                    if field['allowed_otypes']:
-                        for t in field['allowed_otypes']:
-                            #log_me(u"Working on field with otypes {}".format(t))
-                            for f0 in f:
-                                if f0['field_name'] == field['name_singular'] and f0['value_type'] == t:
-                                    #new_row[name].append(dict(type=t, key=f0['value']))
-                                    new_row[u'Migration Notes'] = new_row[u'Migration Notes'] + \
-                                        u"<li>Manually add {}={}:{} from source article {}</li>\n".format(name, t, f0['value'], id)
-                    else:
-                        #log_me(u"Working on multi-field {}".format(t))
-                        for f0 in f:
-                            if f0['field_name'] == field['name_singular'] and f0['value_type'] == t:
-                                # new_row[name].append(dict(type=t, key=f0['value']))
-                                new_row[u'Migration Notes'] = new_row[u'Migration Notes'] + \
-                                                              u"<li>Manually add {}={}:{} from source article {}</li>\n".format(
-                                                                  name, t, f0['value'], id)
+            new_row = dict(description=article['body'], key=article['title'])
+            # Iterate through the custom fields (caller could have sent fewer)
+            for field in article['custom_fields']:
+                if field['value_type'] in ['picker', 'multi_picker', 'date', 'rich_text']:
+                    new_row[field['field_name']] = field['value']
                 else:
-                    name = field['name_singular']
-                    for f0 in f:
-                        if f0['field_name'] == field['name_singular']:
-                            new_row[name] = f0['value']
-            new_row[u'Migration Notes'] = new_row[u'Migration Notes'] + u"\n</ul>"
+                    # In the case of Object Sets and People Sets, this may not be any good
+                    log_me(f"Warning: {field['field_name']}/{field['value_type']}/{field['value']}")
+                    new_row[field['field_name']] = {field['value_type'] : field['value']}
             body = body + json.dumps(new_row) + '\n'
         return body
 
-    # Obsolete function ----
-    # def from_csv(self, filename, encoding='utf-8'):
-    #     self.article=pd.read_csv(filename, encoding=encoding)
-    #     pass
 
     def to_csv(self, filename, encoding='utf-8'):
         #log_me(u"Creating file: {}".format(filename))
         csv = self.article.copy() # should be a copy
-        del csv[u'id'] # the ID is meaningless when uploading, so let's not pretend
-        csv.index=csv[u'title']
+        del csv['id'] # the ID is meaningless when uploading, so let's not pretend
+        csv.index=csv['title']
         # the ID gets added to the CSV because it is also the index
-        del csv[u'attachments'] # unfortunately not supported yet by this script
-        del csv[u'custom_fields'] # user should have already flattened them
-        del csv[u'has_children']
-        del csv[u'author']
-        del csv[u'editors']
-        del csv[u'private']
-        del csv[u'ts_created']
-        del csv[u'ts_updated']
-        del csv[u'template_id']
-        del csv[u'url']
-        #del csv[u'references']
-        csv[u'template_name'] = csv.template_title
-        csv[u'key'] = csv.title
-        csv[u'description'] = csv.body
-        del csv[u'template_name']
-        del csv[u'key']
-        del csv[u'description']
-        # csv = csv.rename(index=str, columns={
-        #     u"template_title": u"template_name",
-        #     u"title":u"key",
-        #     u"body":u"description"
-        # })
-        csv[u'object_type']=u'article'
-        csv[u'create_new']=u'Yes'
-        csv[u'tags']=u'migrated'
+        del csv['attachments'] # unfortunately not supported yet by this script
+        del csv['custom_fields'] # user should have already flattened them
+        del csv['has_children']
+        del csv['author']
+        del csv['editors']
+        del csv['private']
+        del csv['ts_created']
+        del csv['ts_updated']
+        del csv['template_id']
+        del csv['url']
+        #del csv['references']
+        csv['template_name'] = csv.template_title
+        csv['key'] = csv.title
+        csv['description'] = csv.body
+        del csv['template_name']
+        del csv['key']
+        del csv['description']
+        csv['object_type']='article'
+        csv['create_new']='Yes'
+        csv['tags']='migrated'
         csv.to_csv(filename, encoding=encoding)
 
     def head(self):
@@ -177,24 +143,6 @@ class Article():
                 #     except:
                 #         log_me(u"Formatting issue {}".format(a.id))
 
-    def convert_references_2(self):
-        # First pass: create a DataFrame of target articles with
-        # New articles that are being migrated or referenced
-        # All references to articles "zero-ed out" - will be re-calculated in Second Pass
-        # The title gets saved in the title attribute of the anchor (safer)
-        for a in self.article.itertuples():
-            soup = BeautifulSoup(a.body, "html5lib")
-            # Find all Anchors
-            match = soup.findAll('a')
-            for m in match:
-                # We only care about Alation anchors, identified by the attr data-oid
-                if 'data-oid' in m.attrs:
-                    # we have found a link with an data-oid and a data-otype
-                    oid=int(m['data-oid'])
-                    otype=m['data-otype']
-                    if otype=='article':
-                        if int(a.id)<=1582 or oid<=1582:
-                            print("{:04}/{:60} -----------> {:04}/{:60}".format(a.id, a.title, oid, m.get_text()))
 
 
 
@@ -209,21 +157,10 @@ class Article():
                 src.append([(ind, i['src']) for i in images])
         return src
 
-    # def get_files_old(self):
-    #     match = self.article.body.apply(lambda x: re.findall(
-    #         '<img class=\"([/a-z -_0-9]*)\" +src=\"([/a-z -_0-9]*)\" +style=\"width: ([/a-z -_0-9]*)\">', x, flags=0))
-    #     unique_list_files = set()
-    #     for i, m in match.iteritems():
-    #         for n in m:
-    #             relative_url = n[1].replace("https://abok.alationproserv.com", "") # n[1] previously
-    #             #log_me("{}:{}".format(i, relative_url))
-    #             unique_list_files.add(relative_url)
-    #     return unique_list_files
-
 
     def get_article_by_name(self, name):
-        match = self.article[self.article.title==name]
-        if match.shape[0] == 0:
+        match = self.article[self.article.title == name]
+        if not match.shape[0]:
             return None
         else:
             return match
@@ -253,7 +190,7 @@ class Article():
             'dpi': '300',
             'minimum-font-size': '12',
             'disable-smart-shrinking': '',
-            'header-left': u'Alation Book of Knowledge' + now.strftime(u" %Y-%m-%d %H:%M "),
+            'header-left': 'Alation Book of Knowledge' + now.strftime(u" %Y-%m-%d %H:%M "),
             'header-line': '',
             'header-font-size': '9',
             'header-spacing': '4',
@@ -268,48 +205,43 @@ class Article():
             'quiet': ''
         }
         # Define the location of the created ABOK pdf file
-        ABOKpdffilename = u'ABOK' + now.strftime(u" %Y-%b-%d %H_%M ") + u'.pdf'
+        ABOKpdffilename = 'ABOK' + now.strftime(u" %Y-%b-%d %H_%M ") + '.pdf'
         seq = self.check_sequence(first)
-        html = u'<meta http-equiv="Content-Type" content="text/html; charset=utf-8">' +\
-               u'<link rel="stylesheet" href="https://use.typekit.net/pno7yrt.css">' +\
-               u'<link href="alation.css" rel="stylesheet" type="text/css">'
+        html = '<meta http-equiv="Content-Type" content="text/html; charset=utf-8">' +\
+               '<link rel="stylesheet" href="https://use.typekit.net/pno7yrt.css">' +\
+               '<link href="alation.css" rel="stylesheet" type="text/css">'
         for i in seq:
-            html = html + u'<h1>' + self.article.title[i] + u'</h1></p>'
-            html = html + self.article.body[i] + u'</p>'
+            html = html + '<h1>' + self.article.title[i] + '</h1></p>'
+            html = html + self.article.body[i] + '</p>'
         html2 = abok.clean_up(html)
         html2 = html2 + additional_html
-        pdfkit.from_string(html2, ABOKpdffilename, options=bodyoptions, css="alation.css", cover='cover.html', cover_first=True)
-        log_me(u'pdfkit finished processing')
+        #pdfkit.from_string(html2, ABOKpdffilename, options=bodyoptions, css="alation.css", cover='cover.html', cover_first=True)
+        log_me('pdfkit finished processing')
 
+    # the following code could be made more elegant if we can guarantee that there are no orphans in the
+    # list, i.e. all articles have a parent, except obviously the first (=top)
     def check_sequence(self, first):
+        # first is the ID of the first article (top of the hierarchy)
+        # it will be the last to be created on the target...
         # we need to put the articles in a logical order.
-        # we put the first in front
-        # log_me(u"First is {}/{}".format(
-        #     self.article.id[first],
-        #     self.article.title[first]))
+        # we put the first in front, but we expect it to be pushed all the way to the last when we are done
         order = deque([first])
         # the to-do-list is all articles without the first
         to_do_list = deque(self.article.index)
-        to_do_list.remove(first)
-        #next item should be a child or the next in the to-do-list
-        while(to_do_list):
+        to_do_list.remove(first) # we have taken care of the first already
+        while to_do_list:
             # get the right most item
             last = order[-1]
             # we either remove a child or the next in the to-do list
             # do we have children?
             current_children = deque(self.article.children[last])
-            while(current_children):
+            while current_children:
                 c = current_children.pop()
                 try:
                     # move to the top of the to-do list
                     to_do_list.remove(c['id'])
                     to_do_list.appendleft(c['id'])
                 except:
-                    log_me(u"WARNING --- Article {}/{} does not appear to be loaded.".format(c['id'], c['title']))
-            next = to_do_list.popleft()
-            order.append(next) # next one
-            # log_me(u"Next is {}/{}".format(
-            #     self.article.id[next],
-            #     self.article.title[next]
-            # ))
+                    log_me(f"WARNING --- Article {c['id']}/{c['title']} does not appear to be loaded.")
+            order.append(to_do_list.popleft()) # next one
         return order

@@ -2,6 +2,21 @@ import json
 import time
 from bs4 import BeautifulSoup
 
+from zipfile import ZipFile
+from contextlib import closing
+
+
+def extract_files(base_path):
+    with closing(ZipFile(base_path + 'ABOK_media_files.zip', 'r')) as myzip:
+        x = myzip.extractall()
+
+
+def list_files(base_path):
+    try:
+        with closing(ZipFile(base_path + 'ABOK_media_files.zip', 'r')) as myzip:
+            return myzip.NameToInfo.keys()
+    except:
+        return []
 
 def log_me(txt):
     try:
