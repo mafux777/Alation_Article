@@ -1114,7 +1114,7 @@ class AlationInstance():
         list_of_apis = []
 
         for api in all_apis.itertuples():
-            api, f = self.get_api_resource(api.Index)
+            api, f = self.get_api_resource_1(api.Index)
             list_of_apis.append(api)
         all_apis_detailed = pd.DataFrame(list_of_apis)
         all_apis_detailed.index =  all_apis_detailed.id
@@ -1225,6 +1225,11 @@ class AlationInstance():
             return r_parsed
         else:
             return r.content
+
+    # The generic_api_post method posts a request to Alation and if necessary checks the status
+    def generic_api_put(self, api, params=None, body=None):
+        r = requests.put(self.host + api, json=body, params=params, headers=self.headers)
+        return r.content
 
     # The generic_api_get implements a REST get, with API token if official or Cookie if not.
     # If the callers sends header, it needs to contain API or cookie

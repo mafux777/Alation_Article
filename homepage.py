@@ -1,6 +1,16 @@
 import pandas as pd
 import sys
-import json
+import config
+# the config.py looks like this:
+"""
+args = {}
+
+args['username'] = 'matthias.funke@alation.com'
+args['password'] = '...'
+args['host'] = 'http://...'
+"""
+from AlationInstance import AlationInstance
+
 
 if __name__ == "__main__":
     args = sys.argv
@@ -43,11 +53,20 @@ if __name__ == "__main__":
       ]
     }
 
+    # -- the argument is a CSV file with the following columns: "description","expandDescription","img","navigateURL","title"
     admin_sections = pd.read_csv(args[1])
-    admin_sections['description'] = ""
+
+    admin_sections['description'] = "Some description here"
+    # convert each row of the CSV into a dict (almost like JSON)
     homepage["admin_sections"][0]["tiles"]  =list(admin_sections.apply(lambda x: dict(x), axis=1))
-    # delete object window section for now... - to-do
+    # delete object window section for now...
+    # by keeping only the first element of the list
     homepage["admin_sections"] = [homepage["admin_sections"][0]]
 
-    p=(json.dumps(homepage))
-    print (p)
+    # --- Log into the source instance
+    alation_1 = AlationInstance(config.args['host'],
+                                config.args['username'],
+                                config.args['password'])
+    res = alation_1.generic_api_put(api='/api/homepage/', body=homepage)
+
+    print(res)
