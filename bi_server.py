@@ -184,6 +184,7 @@ for report in report_df.itertuples():
     }
     # create the folder on the instance
     Folder.get_or_create_from_path(portal_path)
+    # create the report
     r = alation.generic_api_post(api=f'{bi_server_url}/{bi_server}/report/', body=bi_report_details)
     # read it back so we can learn the Alation ID
     r = alation.generic_api_get(api=f'{bi_server_url}{bi_server}/report/',

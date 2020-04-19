@@ -7,6 +7,8 @@ from bs4 import BeautifulSoup
 from alationutil import log_me, unpack_id, unpack_title, unpack_children
 from collections import deque
 
+import pdfkit
+
 # The Article class is a DataFrame of Articles with some additional functionality
 class Article():
     # This is the constructor
@@ -215,7 +217,7 @@ class Article():
             html = html + self.article.body[i] + '</p>'
         html2 = abok.clean_up(html)
         html2 = html2 + additional_html
-        #pdfkit.from_string(html2, ABOKpdffilename, options=bodyoptions, css="alation.css", cover='cover.html', cover_first=True)
+        pdfkit.from_string(html2, ABOKpdffilename, options=bodyoptions, css="alation.css", cover='cover.html', cover_first=True)
         log_me('pdfkit finished processing')
 
     # the following code could be made more elegant if we can guarantee that there are no orphans in the

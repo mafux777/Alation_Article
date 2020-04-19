@@ -6,6 +6,14 @@ from zipfile import ZipFile
 from contextlib import closing
 
 
+from datetime import datetime as pydatetime
+def to_unix_time(dt):
+    epoch = pydatetime.fromtimestamp(0, dt.tzinfo)
+    delta = dt - epoch
+    return delta.total_seconds()
+
+
+
 def extract_files(base_path):
     with closing(ZipFile(base_path + 'ABOK_media_files.zip', 'r')) as myzip:
         x = myzip.extractall()

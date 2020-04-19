@@ -185,8 +185,7 @@ api_json = """
 if __name__ == "__main__":
     # -- API Resources
 
-    alation_1 = AlationInstance("https://demo-sales-se.alationcatalog.com",
-        "matthias.funke@alation.com", "mbWv@7w7*ZmZ")
+    alation_1 = AlationInstance('http://r6-sandbox.alationproserv.com/', 'matthias.funke@alation.com','9kBYH;i7cQ;C')
 
     r = alation_1.post_api_resource(json.loads(api_json))
     print (r)

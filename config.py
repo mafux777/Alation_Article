@@ -2,11 +2,11 @@
 args = {}
 
 args['username'] = 'matthias.funke@alation.com'
-args['password'] = ''
-args['host'] = 'https://demo-sales.alationcatalog.com'
+args['password'] = 'm9kBYH;i7cQ;C'
+args['host'] = 'http://localhost:8000'
 args['username2'] = 'matthias.funke@alation.com'
-args['password2'] = ''
-args['host2'] = 'http://18.218.6.215'
+args['password2'] = 'm9kBYH;i7cQ;C'
+args['host2'] = 'http://localhost:8000'
 args['delete'] = False
 
 first_abok_article = 1889

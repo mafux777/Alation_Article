@@ -60,6 +60,8 @@ class AlationInstance():
 
         # get the session ID and store it for all future API calls
         sessionid = s.cookies.get('sessionid')
+        if not sessionid:
+            log_me('No session ID, probably wrong user name / password')
         headers = {"X-CSRFToken": csrftoken,
                    "Cookie": f"csrftoken={csrftoken}; sessionid={sessionid}",
                    "Referer": URL
@@ -1056,7 +1058,7 @@ class AlationInstance():
     def extract_logical(self, api_dict):
         if "properties" in api_dict:  # like children
             l = []
-            for k, v in api_dict['properties'].iteritems():
+            for k, v in api_dict['properties'].items():
                 v['key'] = k
                 l.append(self.extract_logical(v))
             return l
@@ -1211,7 +1213,7 @@ class AlationInstance():
                 url_job = "/api/v1/bulk_metadata/job/"
                 # Let's wait for the job to finish
                 while (True):
-                    status = self.generic_api_get(api=url_job, params=params, official=True)
+                    status = self.generic_api_get(api=url_job, params=params, official=True, verify=self.verify)
                     if status['status'] != 'running':
                         objects = status['result']
                         # if objects:
@@ -1228,7 +1230,7 @@ class AlationInstance():
 
     # The generic_api_post method posts a request to Alation and if necessary checks the status
     def generic_api_put(self, api, params=None, body=None):
-        r = requests.put(self.host + api, json=body, params=params, headers=self.headers)
+        r = requests.put(self.host + api, json=body, params=params, headers=self.headers, verify=self.verify)
         return r.content
 
     # The generic_api_get implements a REST get, with API token if official or Cookie if not.
@@ -1243,9 +1245,12 @@ class AlationInstance():
             else:
                 headers_final = self.headers
                 headers_final['Referer'] = self.host + api
-        r = requests.get(self.host + api, headers=headers_final, params=params)
+        r = requests.get(self.host + api, headers=headers_final, params=params, verify=self.verify)
         if r.status_code in [200, 201]:
-            return r.json()
+            try:
+                return r.json()
+            except:
+                return r.content # for LogicalMetadata API which does not use standard JSON
         else:
             return r.content
 

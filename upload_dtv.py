@@ -58,7 +58,7 @@ if __name__ == "__main__":
     body['author'] = 1
     r = target.put_single_query(body)
 # --------------------------
-    dd = target.download_datadict_r6(1)  # Alation Analytics is 1 on ABOK
+    #dd = target.download_datadict_r6(1)  # Alation Analytics is 1 on ABOK
 
 
 
@@ -66,7 +66,7 @@ if __name__ == "__main__":
     #file_key = "AYU5"
     desired_template = file_key
 
-    ds_id = 11
+    #ds_id = 11
 
     dtv = pd.read_csv(args['pickle'], sep=';')
     cols = list(dtv.axes[1])
@@ -210,13 +210,13 @@ if __name__ == "__main__":
     custom_fields_pd = pd.DataFrame(custom_fields)
 
     # --- Log into the target instance
-    url_2    = args['host']
-    user_2   = args['username']
-    passwd_2 = args['password']
-    delete_flag = args['delete']
-    target = AlationInstance(url_2, user_2, passwd_2)
-
-    dd = target.download_datadict_r6(1)  # Alation Analytics is 1 on ABOK
+    # url_2    = args['host']
+    # user_2   = args['username']
+    # passwd_2 = args['password']
+    # delete_flag = args['delete']
+    # target = AlationInstance(url_2, user_2, passwd_2)
+    #
+    # dd = target.download_datadict_r6(1)  # Alation Analytics is 1 on ABOK
 
     dimension_articles_ = pd.DataFrame(dimension_articles)
     #dimension_articles_ = dimension_articles_.apply(target.postArticle, axis=1)
@@ -254,8 +254,8 @@ if __name__ == "__main__":
                 if k in pickers and pickers[k]>1:
                     new[cut_str(file_key+k)] = v
             # Let's give our article a descriptive and unique name
-            #new['key'] = "{}-{}-{}-{}".format(file_key, art_as_dict['Data_Item'], art_as_dict['Ref_No'],i)
-            new['key'] = art_as_dict['Term']
+            new['key'] = "{}-{}-{}-{}".format(file_key, art_as_dict['Data_Item'], art_as_dict['Ref_No'],i)
+            #new['key'] = art_as_dict['Term']
             # The body of the article will contain a table with all the values
             # This looks good, but means the picker values are shown again (and need to updated separately)
             new['description'] = create_table_html(table_in_body)
