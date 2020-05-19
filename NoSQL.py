@@ -1,172 +1,183 @@
 import requests
 import json
-import sys
-from collections import deque
-import re
 from time import sleep
+from datetime import datetime, timezone
+
+# -- ADJUST THE FOLLOWING CONFIG PARAMS
+ds_id=49
+url = "http://18.218.6.215"
+headers = dict(token='a11b49ca-d484-4a46-b1d9-d0af03ae348c')
+filename = "/Users/matthias.funke/Downloads/ctm_json.json"
+folder='root.bq' # should contain 1 dot
+collection=f'CTM-v4' # should not contain any dots
+# -- THAT WAS IT
+
+def log_me(txt):
+    dt = datetime.now(timezone.utc).isoformat(sep=' ', timespec='milliseconds')
+    print(f"{dt} {txt}")
 
 
-test = {
-  "folders": [{
-    "name": "Folder 1",
-    "collections": [{
-      "name": "Collection 0",
-      "schemata": [{   # schemata is a list of dicts, each schema with a name and a definition
-        "name":"Schema 0",
-        "definition": { # the definition is a dict with title, type, and *properties* (for objects) or *items* (for arrays)
-          "title": "Title 0", # this seems to be ignored
-          "type": "Object", # this does not seem to make much sense
-          "required": ["$attribute1", "$attribute2"],
-          "properties": { # properties is a dict with one key per attribute
-            "$attribute1": {
-              "type": "type_of_1" # each attribute is a dict with a single key: type
-            },
-            "$attribute2": {
-              "type": "type_of_2"
-            }
-          }
-        }
-      }]
-    }]
-  }]
-}
 
-#url2 = "https://funkmeister510.alationcatalog.com/integration/v1/data/6/parse_docstore/"
-url = "http://18.218.6.215/"
-api = "integration/v1/data/3/parse_docstore/"
-headers = dict(token='e3a43bb9-b62c-48c8-9bea-6feccc265356')
+api = f"/integration/v1/data/{ds_id}/parse_docstore/"
 
-dexcom = {'folders':[{'name':'Root Folder',
-                      'collections':[]}]}
 
-list_of_collections = dexcom['folders'][0]['collections']
-dict_of_types = {}
+# the dictionary will be the container for all the physical metadata
+# a folder...
+# containing a collection...
+# containing a bunch of schemas
+ukulele = dict(folders=[dict(name=folder, collections=[dict(name=collection, schemata=[])])])
+list_of_defs = ukulele['folders'][0]['collections'][0]['schemata']
 
-# Let's create a new collection for each key space
-def create_keyspace(line, source):
-  # match key space to folder
-  words = line.split()
-  list_of_collections.append({'name':words[2], 'schemata':[]})
+# let's open the file from BigQuery in JSON format
+log_me("Reading file")
+with open(filename) as f:
+    source = json.load(f)
 
-  return list_of_collections[-1]['schemata'] # this is a list of schemas
+# let's grab all the fields in that schema and start counting
+base = source['schema']['fields']
+n=1
+logical_metadata = {}
+physical_metadata = {}
 
-# Let's create a new type and cache them
-def create_type(line, source):
-  words = line.split()
-  type_name = words[2].split('.')[1]
-  dict_of_attributes = {}
-  while True:
-      line_1 = source.popleft()
-      if not line_1:
-        continue
-      if line_1==');':
-        break
-      words_1 = line_1.split()
-      name_of_attrib = words_1[0]
-      type_of_attrib = words_1[1].rstrip(',')
-      m = re.search(r'frozen<([a-z_]+)>', type_of_attrib)
-      if m:
-        complex_type = m.group(1)
-        if complex_type in dict_of_types:
-          type_of_attrib=dict_of_types[complex_type]
-          dict_of_attributes[name_of_attrib] = type_of_attrib
-          #print(type_of_attrib)
+# This recursive function is designed to encode an existing dictionary
+# and convert it into the format that Generic NoSQL expects
+def recursive_field_encode(field, parent=None):
+    global n, folder, collection
+    field["Sequence Number"] = n
+    field['Processing Timestamp'] = datetime.now().isoformat(sep=' ', timespec='milliseconds')
+    if parent:
+        if 'full_key' in parent:
+            field['full_key'] = f"{parent['full_key']}.{field['name']}"
         else:
-          print("No complex type for {}".format(complex_type))
-      else:
-        dict_of_attributes[name_of_attrib] = {'type': type_of_attrib}
-  # the purpose of this method is to build a list of existing types
-  print("Added <{}> as a complex type.".format(type_name))
-  dict_of_types[type_name]={'type':'object','properties':dict_of_attributes}
+            field['full_key'] = f"{parent['name']}.{field['name']}"
+    else:
+        field['full_key'] = f"{field['name']}"
+    logical_metadata[f'{folder}.{collection}.{field["full_key"]}'] = dict(
+        title=f'{n:04}', # let's put the sequence number in the title
+        description=f"{field.get('description')}") # and the description in the description
+    # We also want to create a SQL VDS later, so let's store the flattened column name
+    physical_metadata[f'{folder}.{collection}.{field["full_key"]}'] = dict(
+        column_type=f"{field.get('type')}")
+    n+=1
+    if field.get('fields'):
+        d = dict(type='object', properties=dict())
+        for c in field['fields']:
+            g = recursive_field_encode(field=c, parent=field)        # <--- recursive call!
+            for k, v in g.items():
+                d["properties"][k] = v # <---- aggregating the children into one dict
+        return {field['name']: d} # <---- this is likely to be the final return
+    else: # this branch returns a leaf outside
+        return {field.pop('name') : field}
 
-# Let's create a table as a schema in a collection
-def create_table(line, source):
-  # create the empty table first
-  words = line.split()
-  table_name = words[2]
-  # initialize a dict of attributes of this table
-  dict_of_attributes = {}
-  # go and look for attributes
-  while True:
-      line_1 = source.popleft()
-      if not line_1:
-        continue # empty line -> try again
-      if line_1[0]==')': # end of attribute definitions!
-        # Let's now destroy the rest of the table def
-        while True:
-          line_2 = source.popleft()
-          if not line_2:
-            continue
-          if line_2[-1] ==';': # until we find a semicolon
-            break
-        break
-      # Apart from lines with primary key(...) :
-      if not re.search(r'PRIMARY KEY[ ]?\(', line_1):
-        words_1 = line_1.split()
-        name_of_attrib = words_1[0]
-        type_of_attrib = words_1[1].rstrip(',')
-        # look for a complex type
-        m = re.search(r'frozen<([a-z_]+)>', type_of_attrib)
-        if m:
-          complex_type = m.group(1)
-          # It should have been defined before, and therefore cached
-          if complex_type in dict_of_types:
-            type_of_attrib=dict_of_types.copy()[complex_type]
-            dict_of_attributes[name_of_attrib] = type_of_attrib
-          else:
-            print("No complex type for {}".format(complex_type))
-        else:
-          # Just a simple attribute
-          dict_of_attributes[name_of_attrib] = {'type': type_of_attrib}
+log_me("Processing recursive fields")
+for f in base:
+    name = f.get('name') # will be None if the field does not have a name
+    new_schema = recursive_field_encode(f)
+    if f.get('name'):
+        new_element = dict(name=f['name'], definition=dict(title=f['name'], type='object',
+                                                           properties=new_schema[f['name']]['properties']))
+    else:
+        new_element = dict(name=name, definition=f)
+    list_of_defs.append(new_element)
 
-  print("Created table {}:{}".format(table_name, dict_of_attributes))
-  return {'name':table_name, 'definition':{'type':'object',
-    'properties':dict_of_attributes}}
-
-
-args = sys.argv
-with open(args[1]) as f:
-    source = deque(f.read().splitlines())
-
-
-while True:
-  if len(source)==0:
-    break
-  line = source.popleft()
-  if not line:
-    continue
-  components = line.split()
-  if len(components)<=2:
-    continue
-  command = components[0] + " " + components[1]
-  if command == 'CREATE KEYSPACE':
-    list_of_schemas = create_keyspace(line, source)
-      # we use this later to append any tables we find
-  if command == 'CREATE TYPE':
-    create_type(line, source)
-  if command == 'CREATE TABLE':
-     schema = create_table(line, source)
-     # Now insert this at the right place in the structure
-     list_of_schemas.append(schema)
-
-params=dict(remove_not_seen=False)
-r = requests.post(url+api, json=dexcom, headers=headers, params=params)
+# -- Upload NoSQL "physical metadata"
+log_me("Uploading physical metadata for NoSQL")
+params=dict(remove_not_seen=True)
+r = requests.post(url + api, json=ukulele, headers=headers, params=params)
 job_id = json.loads(r.content)['job_id']
 
-sleep(2)
+log_me("Checking status: uploading physical metadata for NoSQL")
+while(True):
+    url2 = url + '/api/v1/bulk_metadata/job/'
+    params = dict(id=job_id)
+    r2 = requests.get(url2, params=params, headers=headers)
+    r3 = json.loads(r2.content)
+    if r3['status']!='running':
+        log_me(r3['msg'])
+        log_me(r3['result'])
+        break
+    sleep(2)
 
-url2 = url + 'api/v1/bulk_metadata/job/'
-params = dict(id=job_id)
-r2 = requests.get(url2, params=params, headers=headers)
+# take care of logical metadata
+body=[]
+data=""
+for k, v in logical_metadata.items():
+    d=dict(key=f"{ds_id}.{k}", title=v.get('title'),description=v['description'])
+    body.append(d)
+    data=data+json.dumps(d)+"\n"
 
-r3 = json.loads(r2.content)
-print('--------------')
-print(r3['status'])
-print(r3['msg'])
-print(r3['result'])
+log_me("Uploading logical metadata for NoSQL")
+r2 = requests.post(f'{url}/api/v1/bulk_metadata/custom_fields/default/doc_schema', data=data, headers=headers)
+log_me(r2.content)
+
+# create a virtual data source
+# /integration/v1/datasource/
+
+# Parameters for creating the data source
+log_me("Creating a virtual datasource of type bigquery")
+params=dict(dbtype="bigquery", title=f"Ukulele VDS", is_virtual=True, deployment_setup_complete=True)
+r = requests.post(url=f"{url}/integration/v1/datasource/", headers=headers, json=params, verify=False)
+
+# get the status
+status = r.json()
+# extract the data source ID
+ds_id = status['id']
+log_me(f"Created data source: {url}/data/{ds_id}/")
+log_me("Deleting some old data sources")
+for i in range(53, ds_id):
+    r = requests.delete(url=f"{url}/integration/v1/datasource/{i}/", headers=headers, verify=False)
+#ds_id=51
+
+# write physical metadata for VDS
+# at the same time, prepare logical metadata
+body=[dict(key=f'{folder}'), # for the schema
+      dict(key=f'{folder}.{collection}', table_type="TABLE")]
+body_2 = []
+for k, v in physical_metadata.items():
+    segments = k.split(".")
+    seg = len(segments)
+    if seg>4:
+        seg_1 = ".".join(segments[0:3])
+        seg_2 = "_".join(segments[3:])
+        name_2 = f'{seg_1}.{seg_2}'
+        body.append(dict(key=name_2,column_type=v['column_type']))
+        body_2.append(dict(key=name_2,title=f"{seg-3:02} {segments[-1]}", description=logical_metadata[k].get('description')))
+    else:
+        body.append(dict(key=k,column_type=v['column_type']))
+        body_2.append(dict(key=k,title=f"{seg-3:02} {segments[-1]}", description=logical_metadata[k].get('description')))
 
 
+data=""
+for b in body:
+    b['key'] = f"{ds_id}.{b['key']}"
+    data=data+json.dumps(b)+"\n"
 
+log_me("Posting physical metadata for bigquery")
+url_2 = f"{url}/api/v1/bulk_metadata/extraction/{ds_id}"
+r = requests.post(url=url_2, headers=headers, data=data, params=dict(remove_not_seen=True))
 
+# -- Get the status of the bulk upload job ---
+status = r.json()
+params=dict(name=status['job_name'].replace("#", "%23"))
+url_job = f"{url}/api/v1/bulk_metadata/job/?name={params['name']}"
 
+while(True):
+    r_2 = requests.get(url=url_job, headers=headers)
+    status = r_2.json()
+    if status['status'] != 'running':
+        objects = json.loads(status['result'])['error_objects']
+        if objects:
+            for error in objects:
+                log_me(error)
+        else:
+            log_me(status)
+        break
 
+# take care of logical metadata
+data=""
+for b in body_2:
+    b['key'] = f"{ds_id}.{b['key']}"
+    data=data+json.dumps(b)+"\n"
+log_me("Uploading logical metadata")
+r2 = requests.post(f'{url}/api/v1/bulk_metadata/custom_fields/default/mixed', data=data, headers=headers)
+log_me(r2.json())
