@@ -182,5 +182,11 @@ log_me(r2.json())
 
 
 
-
-
+# take care of logical metadata
+data=""
+for b in body_2:
+    b['key'] = f"{ds_id}.{b['key']}"
+    data=data+json.dumps(b)+"\n"
+log_me("Uploading logical metadata")
+r2 = requests.post(f'{url}/api/v1/bulk_metadata/custom_fields/default/mixed', data=data, headers=headers)
+log_me(r2.json())
