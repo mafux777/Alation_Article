@@ -16,8 +16,6 @@ def log_me(txt):
     dt = datetime.now(timezone.utc).isoformat(sep=' ', timespec='milliseconds')
     print(f"{dt} {txt}")
 
-
-
 api = f"/integration/v1/data/{ds_id}/parse_docstore/"
 
 
