@@ -283,10 +283,10 @@ class AlationInstance():
         change_token = "/api/v1/changeToken/"  # if you already have a token, use this url
         new_token = "/api/v1/getToken/"  # if you have never generated a token, use this url
         data = dict(username=self.account, password=self.password)
-        response = requests.post(self.host + new_token, data=data)
+        response = requests.post(self.host + new_token, data=data, verify=self.verify)
         api_token = response.text
         if api_token == "EXISTING":
-            response = requests.post(self.host + change_token, data=data)
+            response = requests.post(self.host + change_token, data=data, verify=self.verify)
             api_token = response.text
         return api_token
 
@@ -1202,8 +1202,14 @@ class AlationInstance():
 
         return res_pd
     # The generic_api_post method posts a request to Alation and if necessary checks the status
-    def generic_api_post(self, api, params=None, body=None):
-        r = requests.post(self.host + api, json=body, params=params, headers=self.headers)
+    def generic_api_post(self, api, params=None, body=None, official=False):
+        if official:
+            headers_final = dict(token=self.token)
+        else:
+            headers_final = self.headers
+            headers_final['Referer'] = self.host + api
+
+        r = requests.post(self.host + api, json=body, params=params, headers=headers_final, verify=self.verify)
 
         if r.status_code:
             r_parsed = r.json()
@@ -1229,8 +1235,14 @@ class AlationInstance():
             return r.content
 
     # The generic_api_post method posts a request to Alation and if necessary checks the status
-    def generic_api_put(self, api, params=None, body=None):
-        r = requests.put(self.host + api, json=body, params=params, headers=self.headers, verify=self.verify)
+    def generic_api_put(self, api, params=None, body=None, official=False):
+        if official:
+            headers_final = dict(token=self.token)
+        else:
+            headers_final = self.headers
+            headers_final['Referer'] = self.host + api
+
+        r = requests.put(self.host + api, json=body, params=params, headers=headers_final, verify=self.verify)
         return r.content
 
     # The generic_api_get implements a REST get, with API token if official or Cookie if not.
