@@ -7,10 +7,19 @@ import config
 
 # Configuration: base url of the on-prem instance, to preserve links for debug purposes
 base_url = "https://demo-sales.alationcatalog.com"
+DEFAULT = 'fennel'
+CREDS = {
+            'HOST': 'fennel2.cluster-cingqyuv6npc.us-east-2.rds.amazonaws.com',
+            'PORT': 5433,
+            'USER': 'postgres',
+            'PASSWORD': 'alation123',
+            'NAME': DEFAULT
+        }
+
 
 # Arguments for the DataSource API
 """
-dbtype	Yes	Currently the only supported types are MySQL and Oracle.
+dbtype	Yes	
 host	Yes*	The host of the data source.
 port	Yes*	The port of the data source.
 deployment_setup_complete	No	If the deployment setup is complete. When set to true, complete data source information is required, else, only partial information is required. Defaults to True.
@@ -44,7 +53,6 @@ def create_datasource(alation_instance, host, port, title, db_username, db_passw
 
 # Update the DataSource with a list of schemas to extract
 def update_datasource(alation_instance, ds_id, schemas):
-    # / integration / v1 / datasource / < ds_id > / sync_configuration / metadata_extraction /
     """
     cron_extraction	Yes	The extraction schedule in crontab format (minute, hour, day of month, month of year, day of week)
     disable_auto_extraction	No	True if the extraction schedule should not be executed, false to run extraction according to cron_extraction
@@ -54,14 +62,13 @@ def update_datasource(alation_instance, ds_id, schemas):
     """
     params=dict(force_refresh=True)
     log_me("Running MDE")
-    # /data/57/list_schemas/
     mde = alation_instance.generic_api_post(api=f'/data/{ds_id}/list_schemas/')
     mde = alation_instance.generic_api_get(api=f'/integration/v1/datasource/{ds_id}/available_schemas/',
                                            params=params, official=True)
     body=dict(cron_extraction="0 4 * * *",
               disable_auto_extraction=False,
-              limit_schemas=schemas,
-              exclude_schemas=[],
+              limit_schemas=[],
+              exclude_schemas=['pg_temp_1', 'pg_toast', 'pg_toast_temp_1', 'public'],
               remove_filtered_schemas=True
               )
     sync = alation_instance.generic_api_put(api=f'/integration/v1/datasource/{ds_id}/sync_configuration/metadata_extraction/',
@@ -91,9 +98,9 @@ class DatabaseProxy(object):
             if not cursor:
                 raise("Connection error")
             cursor.execute(statement)
-            #psql_instructions.append(statement)
             self.connection.commit()
             cursor.close()
+            return True
         except (Exception, DatabaseError) as error:
             log_me(f"Error while executing {statement}:\n{error}")
             # Remember all the types that are not supported by Postgres
@@ -107,6 +114,7 @@ class DatabaseProxy(object):
                     missing[match.group(1)] = 1
             cursor.close()
             self.connection.rollback()
+            return False
         finally:
             # closing database connection.
             if final:
@@ -121,25 +129,36 @@ class DatabaseProxy(object):
                      column='attribute')
 
         href=f"{base_url}/{mapping[otype]}/{id}/"
-        comment_text = f'<p>Original source: <a href="{href}" rel="noopener noreferrer" target="_blank">{href}</a></p>'
+        # comment_text = f'<p>Original source: <a href="{href}" rel="noopener noreferrer" target="_blank">{href}</a></p>'
+        comment_text = f'Original source: {href}'
         if part2:
             statement=f'COMMENT ON {otype} "{part1}"."{part2}"' + f" IS '{comment_text}'"
         else:
             statement = f'COMMENT ON {otype} "{part1}"' + f" IS '{comment_text}'"
         self.send_statement(statement)
 
+
+    def get_existing_schemas(self):
+        df = pd.read_sql("SELECT catalog_name ,schema_name, schema_owner FROM information_schema.schemata",
+            con = self.connection
+        )
+        return df
+
 # Main program
 if __name__ == "__main__":
     desc = "Copies physical metadata from rosemeta to another pgSQL"
     log_me("Reading data from pickle file")
     data = pd.read_pickle("rosemeta.gzip")
-
+    # for debug purposes: MS SQL only
+    # data = data.loc[data.ds_type=='sqlserver', :]
+    # data = data.loc[data.ds_id!=548, :]
     # Replace non-postgres types with equivalent postgres types
     substitutions={
-        r'^datetime': 'timestamp',
+        r'^(small)?datetime': 'timestamp',
         r'^timestamp_ltz': 'timestamp with time zone',
         r'^(timestamp_ntz|smalltimestamp)': 'timestamp',
         r'^string': 'text',
+        r'^text\(max\)' : 'text',
         r'^(long|medium|short)?text(\(\d+\))?' : 'text',
         r'^(number|double|float|numeric)(\(\d+\))?': 'numeric',
         r'^integer(\d)?' : 'integer',
@@ -152,7 +171,11 @@ if __name__ == "__main__":
         r'^(tiny|byte|big)?int\d?': 'integer',
         r'^bytes$': 'text',
         r'^geography' : 'polygon',
+        r'^(varchar|nvarchar)\(max\)' : 'text',
         r'^(varchar|nvarchar)(\(\d+\))?' : 'text',
+        r'^varbinary\(max\)' : 'bytea',
+        r'^binary\(max\)' : 'bytea',
+        r'^(var)?binary(\(\d+\))?' : 'bytea',
         r'^(na|hstore|id|picklist|reference|textarea|url|address|email|clob)(\(\d+\))?' : 'text',
         r'^(num|variant|enum|measures|uniqueidentifier|accountnumeric)(\(\d+\))?': 'numeric',
     }
@@ -165,11 +188,11 @@ if __name__ == "__main__":
         for pattern, replacement in substitutions.items():
             match = re.search(pattern, attr, flags=re.IGNORECASE)
             if match:
-                # Remember the substition and print it for debuggin
+                # Remember the substition and print it for debugging
                 if not match.group(0) in seen:
                     log_me(f'{match.group(0)} -> {replacement}')
                     seen[match.group(0)] = True
-                attr = re.sub(pattern, replacement, attr, flags=re.IGNORECASE)
+                attr = replacement
                 break
         return attr
     # Format the attribute so that it can be included in the CREATE TABLE statement
@@ -187,6 +210,7 @@ if __name__ == "__main__":
     log_me("Logging in to Alation Instance")
     alation = AlationInstance(config.args['host'], config.args['username'], config.args['password'], verify=False)
     all_datasources={}
+    credentials = CREDS  # configuration is now on top of the file
 
     # create data source, if necessary
     all_ds = data.groupby(['ds_id', 'ds_title', 'ds_type'])
@@ -194,18 +218,13 @@ if __name__ == "__main__":
     for ds, schema_df in all_ds:
         # generate a unique name for the data source
         # substitute _ for brackets and spaces
-        ds_name = re.sub(r'[[\]\s]', '_', f"005_{ds[1]}_{ds[2]}_{ds[0]}")
+        #ds_name = re.sub(r'[[\]\s]', '_', f"020_{ds[1]}_{ds[2]}_{ds[0]}")
+        ds_name = re.sub(r'[[\]\s]', '_', ds[1])
         # keep track of all names and their ds_ids on the target
         all_datasources[ds_name] = alation.look_up_ds_by_name(ds_name)
         log_me(f"Working on {ds_name} in the cloud database")
         # Hard coded credentials for the cloud database
-        credentials = {
-            'HOST': 'fennel2.cluster-cingqyuv6npc.us-east-2.rds.amazonaws.com',
-            'PORT': 5433,
-            'USER': 'postgres',
-            'PASSWORD': 'alation123',
-            'NAME': ds_name
-        }
+        credentials['NAME'] = ds_name
         try:
             # See if we can just connect to the database (i.e. it already exists)
             exporter2 = DatabaseProxy(credentials)
@@ -224,18 +243,16 @@ if __name__ == "__main__":
         except:
             # The database does not exist in the cloud already.
             # Log in using the "default" database
-            credentials['NAME'] = 'fennel'
-            exporter2 = DatabaseProxy(credentials, extensions.ISOLATION_LEVEL_AUTOCOMMIT)
+            credentials['NAME'] = DEFAULT
 
             # set the isolation level for the connection's cursors
             # will raise ActiveSqlTransaction exception otherwise
+            exporter2 = DatabaseProxy(credentials, extensions.ISOLATION_LEVEL_AUTOCOMMIT)
             log_me(f"Creating database {ds_name}")
             exporter2.send_statement(f'CREATE DATABASE "{ds_name}"', final=True) # include ds_id
 
-            # Now that the database exists, we can connect to it
+            # Now that the database exists, we can set up the data source in Alation
             credentials['NAME'] = ds_name
-
-            # Create the data source in Alation
             new_ds = create_datasource(alation, host=credentials['HOST'],
                               port=credentials['PORT'],
                               title=ds_name,
@@ -244,29 +261,43 @@ if __name__ == "__main__":
                               db_password=credentials['PASSWORD'],
                               dbname=ds_name)
             log_me(f"Created data source: {config.args['host']}/data/{new_ds['id']}/")
-            # Remember that this datasource exists
+            # Remember that this datasource exists and the ID
             all_datasources[ds_name] = new_ds['id']
+            # create a new connection to the newly created database
             exporter2 = DatabaseProxy(credentials)
+
+        # Find out which schemas already exist so we can drop them (note the Alation catalog page will stay)
+        existing_schemas = exporter2.get_existing_schemas()
+
+        for schema in existing_schemas.loc[existing_schemas.schema_owner==credentials['USER']].itertuples():
+            cat = schema.catalog_name
+            sch = schema.schema_name
+            log_me(f"Dropping {sch}")
+            statement = f'DROP SCHEMA "{sch}" CASCADE'
+            exporter2.send_statement(statement)
 
         list_of_schemas=[]
         # Create all the schemas
         log_me("Creating schemas (if not exists)")
         for schema, _ in schema_df.groupby(['schema_name', 'schema_id']):
             statement = f'CREATE SCHEMA IF NOT EXISTS "{schema[0]}"'
-            exporter2.send_statement(statement)
-            exporter2.add_comment("schema", schema[1], schema[0])
-            list_of_schemas.append(schema[0])
+            if exporter2.send_statement(statement):
+                exporter2.add_comment("schema", schema[1], schema[0])
+                list_of_schemas.append(schema[0])
         # Create all the tables
         log_me("Creating tables (if not exists)")
         for table, attribute_df in schema_df.groupby(['schema_name', 'table_name']):
-            all_attributes = ",".join(set(attribute_df['create_attribute']))
+            all_attributes = ",".join(list(attribute_df['create_attribute']))
             table_statement = f'CREATE TABLE IF NOT EXISTS "{table[0]}"."{table[1]}"({all_attributes})'
             table_id = attribute_df.iloc[0, 5]
-            exporter2.send_statement(table_statement)
-            exporter2.add_comment("table", table_id, table[0], table[1])
+            if exporter2.send_statement(table_statement):
+                exporter2.add_comment("table", table_id, table[0], table[1])
         exporter2.connection.close()
         # Now that the database in the cloud has been hydrated with schemas, tables, and columns...
         # We can run MDE
         update_datasource(alation, all_datasources[ds_name], list_of_schemas)
 
     log_me(f'These types were not handled: {missing}')
+    log_me("All done.")
+
+
