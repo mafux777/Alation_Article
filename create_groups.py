@@ -3,6 +3,20 @@ import config
 import requests
 import pandas as pd
 
+
+"""
+# --- put this in a file called config.py
+args = {}
+
+args['username'] = '...'
+args['password'] = '...'
+args['host'] = 'http://...'
+
+args['refresh_token'] = '...'
+
+args['input_file'] = '....csv'
+"""
+
 # Read a CSV file with two cols: Group	User
 def load_input_file(fn):
     return pd.read_csv(fn)
