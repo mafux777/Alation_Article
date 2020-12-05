@@ -1,14 +1,21 @@
 import boto3
 import time
 
+"""
+Find an explanation of this code here: 
+https://matthias-funke.medium.com/athena-partitioning-for-cloud-trail-logs-228eb214d809
+"""
+
 start = time.time()
 # Location should not end with a slash, just CloudTrail
 location = "s3://aws-cloudtrail-logs-255149284406-4cec155e/AWSLogs/255149284406/CloudTrail"
+# results only needed for the last part (where we validate the query worked)
+results = "s3://com.alationpro/athena"
 region = "us-west-2"
 database = "default"
 cloudtrail_table = "cloudtrail_new"
 start_year = 2020
-end_year = 2025 # this means partitions go to 12/31/2024
+end_year = 2020
 
 my_session = boto3.session.Session()
 
@@ -166,6 +173,7 @@ response = glue.create_table(
         Description='Developer: matthias.funke@alation.com',
         StorageDescriptor=table_creation_details.get('StorageDescriptor'),
         PartitionKeys=table_creation_details.get('PartitionKeys'),
+        Parameters=dict(classification="cloudtrail"),
         TableType="EXTERNAL_TABLE"
     )
 
@@ -173,7 +181,7 @@ response = glue.create_table(
 from calendar import monthrange
 PartitionInputList = []
 
-for year in range(start_year, end_year):
+for year in range(start_year, end_year+1):
     for month in range(1, 12 + 1):
         for day in range(1, 1 + monthrange(year, month)[1]):
             my_location = f"{location}/{region}/{year}/{month:02}/{day:02}/"
@@ -205,4 +213,56 @@ from math import ceil
 print(f"Created {cloudtrail_table} in {region} with {len(PartitionInputList)} partitions.")
 print(f'Time: {ceil(time.time() - start)} secs.')
 
+query_text = f"""
+SELECT eventname, substr(eventtime, 1, 10) as eventdate,count(*)
+FROM {database}.{cloudtrail_table}
+WHERE region='{region}' 
+and year=date_format(date_add('day',-1,current_date),'%Y') 
+and month=date_format(date_add('day',-1,current_date),'%m')
+and day=date_format(date_add('day',-1,current_date),'%d')
+and eventname='StartQueryExecution'
+GROUP BY 1, 2
+ORDER BY 1, 2
+"""
 
+athena = my_session.client('athena', region_name=region)
+
+response = athena.create_named_query(
+    Name='Athena QLI Test Query',
+    Description='Developer: matthias.funke@alation.com',
+    Database=database,
+    QueryString=query_text,
+    ClientRequestToken=f"{hash(query_text):32}"
+)
+
+import uuid
+
+my_query_id = response['NamedQueryId']
+
+print(f"Saved test query with ID {my_query_id}")
+
+response = athena.start_query_execution(
+    QueryString=query_text,
+    ClientRequestToken=str(uuid.uuid1()),
+    QueryExecutionContext={
+        'Database': database
+    },
+    ResultConfiguration={
+        'OutputLocation': results,
+    }
+)
+
+my_query_execution_id = response['QueryExecutionId']
+
+for j in range(10):
+    try:
+        print(f"Get execution results for {my_query_execution_id}")
+        response = athena.get_query_results(
+            QueryExecutionId=my_query_execution_id
+        )
+        break
+    except:
+        time.sleep(10)
+
+my_result = response.get('ResultSet').get('Rows')
+print(f"Your query ran and produced: {my_result}")
