@@ -8,7 +8,7 @@ region = "us-west-2"
 database = "default"
 cloudtrail_table = "cloudtrail_new"
 start_year = 2020
-end_year = 2022 # this means partitions go to 12/31/2024
+end_year = 2025 # this means partitions go to 12/31/2024
 
 my_session = boto3.session.Session()
 
