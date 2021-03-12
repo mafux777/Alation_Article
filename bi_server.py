@@ -5,12 +5,15 @@ import time
 import random
 from AlationInstance import AlationInstance
 from alationutil import log_me
+from config import args
+from numpy import log10
+from datetime import datetime, timezone
 
 file_key = ''.join(random.sample("ABCDEFGHJKLMNPQRSTUVWXYZ0123456789", 4))
 
-base_url = 'http://18.218.6.215'
-username = 'matthias.funke@alation.com'
-password = 'm9kBYH;i7cQ;C'
+base_url = args['host']
+username = args['username']
+password = args['password']
 
 def add_table_row(key, value):
     return "<tr><td> {} </td><td> {} </td></tr>".format(key, value)
@@ -29,7 +32,7 @@ random_users = [dict(Report_Owner=[dict(type='user', key=u)]) for u in user_list
 random_users_2 = [dict(otype='user', oid=u) for u in list(users.id)]
 # Create a BI Server, by passing a list of 1 URI
 
-bi_server_details = [{"uri": "https://alation.looker.com/browse"}]
+bi_server_details = [{"uri": "https://alation.looker.com/browse", "title":f"My BI Server {file_key}"}]
 
 bi_server_url = '/integration/v2/bi/server/'
 # bi_server will be populated properly by this...
@@ -37,17 +40,17 @@ r = alation.generic_api_post(api=bi_server_url, body=bi_server_details)
 # {'Status': 'Success: Created 1 servers.', 'Count': 1, 'Errors': [None], 'Server IDs': [48]}
 if r['Count']==1:
     bi_server = r['Server IDs'][0]
-    alation.update_custom_field(o_type='bi_server', o_id=bi_server, field_id=3, update=file_key)
+    #alation.update_custom_field(o_type='bi_server', o_id=bi_server, field_id=3, update=file_key)
     log_me(f'Created server {file_key}: {base_url}/bi/v2/server/{bi_server}/')
 else:
     log_me(f"Expected one BI Server to be created: {r}")
 
 
-#bi_server = 123
+# bi_server = 2
 
 # =========== Handling of the input file from Customer, containing reports in folders ===============
-report_df = pd.read_csv('reports_full.csv', sep=';')
-report_df.index = report_df.ID
+report_df = pd.read_csv('~/Downloads/mysql-analytics_run_1_stmt_1_0 (3).csv', sep=',')
+report_df.index = report_df.id
 
 
 # using global variables now, not clean
@@ -102,7 +105,7 @@ class Folder():
         external_id = create_external_id(reg)
         if external_id not in Folder.registry:
             # ---- create BI folder -----------
-            bif = create_folder_object(name, external_id, parent_folder=parent)
+            bif = [create_folder_object(name, external_id, parent_folder=parent)]
             api = f'{bi_server_url}{bi_server}/folder/'
             # if parent:
             #     print(f'Creating "{parent}/{name}"')
@@ -136,25 +139,28 @@ class Folder():
 bi_reports_created = []
 
 # iterate through all the reports in the spreadsheet
-for report in report_df.itertuples():
+for i, report in report_df.iloc[0:25].iterrows():
 
     # clean up Date Created
-    if isinstance(report.DateCreated, float):
+    if isinstance(report['metrics.market_data.last_trade_at'], float):
         date_created = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     else:
-        date_created = report.DateCreated
-    # clean up Date Modified
-    if isinstance(report.LastModification, float):
-        date_modified = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-    else:
-        date_modified = report.LastModification
+        date_created = report['metrics.market_data.last_trade_at']
+    # # clean up Date Modified
+    # if isinstance(report.LastModification, float):
+    #     date_modified = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    # else:
+    #     date_modified = report.LastModification
 
     # clean up Portal Path
-    portal_path = report.Portal_Path.strip()
-    if isinstance(report.Report_Name, float):
-        report_name="Unnamed Report" # flag it?
-    else:
-        report_name = report.Report_Name.strip()
+    volume = log10(report["metrics.market_data.volume_last_24_hours"])
+    if volume>10:
+        portal_path = "Crypto/Huge Market Cap"
+    elif volume>9:
+        portal_path = "Crypto/Big Market Cap"
+    elif volume>8:
+        portal_path = "Crypto/Medium Market Cap"
+
     portal_path_components = portal_path.split('/')
     # grab info from the folder and map to custom fields
     # these need to be created on the instance manually for now
@@ -162,15 +168,16 @@ for report in report_df.itertuples():
         report_type = portal_path_components[0]
         region = portal_path_components[-1]
 
-    bi_report_details = {
-        "name": report.Report_Name,
+    report_name = report["name"]
+    bi_report_details = [{
+        "name": report['name'],
         "external_id": f'{file_key}+{bi_server}+{portal_path}+{report_name}',
         "created_at": date_created,
-        "last_updated": date_modified,
-        "source_url": f'{report.BoLink}',
+        "last_updated": date_created,
+        # "source_url": f'{report.BoLink}',
         "bi_object_type": "Dashboard",
         "report_type": "DASHBOARD",
-        "owner": f'{report.Owner}',
+        # "owner": f'{report.Owner}',
         "num_accesses": 20,
         "popularity": 50,
         "parent_folder": f'{file_key}+{bi_server}+{portal_path}',
@@ -181,17 +188,22 @@ for report in report_df.itertuples():
         ],
         "report_columns": [
         ]
-    }
+    }]
     # create the folder on the instance
     Folder.get_or_create_from_path(portal_path)
     # create the report
-    r = alation.generic_api_post(api=f'{bi_server_url}/{bi_server}/report/', body=bi_report_details)
+    r = alation.generic_api_post(api=f'{bi_server_url}{bi_server}/report/', body=bi_report_details, official=True)
+
+    while(True):
     # read it back so we can learn the Alation ID
-    r = alation.generic_api_get(api=f'{bi_server_url}{bi_server}/report/',
-                                params={'keyField': 'external_id',
-                                  'oids': [f'{file_key}+{bi_server}+{portal_path}+{report_name}']})
-    if len(r)==0:
-        log_me(f'Warning: {file_key}+{bi_server}+{portal_path}+{report_name} did not download')
+        r = alation.generic_api_get(api=f'{bi_server_url}{bi_server}/report/',
+                                    params={'keyField': 'external_id',
+                                      'oids': [f'{file_key}+{bi_server}+{portal_path}+{report_name}']})
+        if len(r):
+            break
+        else:
+            time.sleep(5)
+            print(f"Still waiting for report to show up")
 
     for report_created in r:
         # grab info from the API and store it
@@ -199,22 +211,30 @@ for report in report_df.itertuples():
         o_id = report_created['id']
         # create a table with all the other info about the report
         table_in_body = []
-        report_dict = report._asdict()
         # iterate through the report metadata values, e.g. author, folder
-        for k, v in report_dict.items():
+        for k, v in report_created.items():
             ## Let's create a row in a table for these values
             if isinstance(v, float):
                 continue
             table_in_body.append(add_table_row(k, v))
         # create the description field
         description=create_table_html(table_in_body)
-        alation.update_custom_field(o_type='bi_report', o_id=o_id, field_id=4, update=description)
-        # send the report type
-        alation.update_custom_field(o_type='bi_report', o_id=o_id, field_id=10087, update=report_type)
-        # send the region (in UPPER case)
-        alation.update_custom_field(o_type='bi_report', o_id=o_id, field_id=10085, update=region.upper())
+        field_info_4 = [dict(field_id=4,
+                          ts_updated=datetime.now(timezone.utc).isoformat(),
+                          otype="bi_report",
+                          oid=o_id,
+                          value=description)]
+        r = alation.generic_api_put(api="/integration/v2/custom_field_value/", body=field_info_4, official=True)
+
+        field_info_10006 = [dict(field_id=10006,
+                          ts_updated=datetime.now(timezone.utc).isoformat(),
+                          #ts_updated="2021-03-11T14:38:49.716Z",
+                          otype="bi_report",
+                          oid=o_id,
+                          value=["Crypto"])]
+        r = alation.generic_api_put(api="/integration/v2/custom_field_value/", body=field_info_10006, official=True)
         # assign a random user on the instance to be the report owner
-        alation.update_custom_field(o_type='bi_report', o_id=o_id, field_id=10086, update=random.sample(random_users_2, 1))
+        # alation.update_custom_field(o_type='bi_report', o_id=o_id, field_id=10086, update=random.sample(random_users_2, 1))
         log_me(f'Report created: {base_url}/bi/v2/report/{o_id}/')
 
 # create a DataFrame of all the reports with their IDS
@@ -246,10 +266,3 @@ for external_id, folder in Folder.registry.items():
                 alation.update_custom_field(o_type='bi_folder', o_id=oid, field_id=4, update=description)
         except:
             log_me(f'Issue with {folder}')
-
-
-
-
-
-
-
