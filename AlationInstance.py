@@ -6,7 +6,7 @@ from bs4 import BeautifulSoup
 import urllib
 
 from alationutil import log_me
-from secure_copy import list_files
+#from secure_copy import list_files
 
 import errno
 import os
@@ -37,7 +37,8 @@ class AlationInstance():
         log_me("Getting existing data sources")
         self.ds = self.getDataSources()
         self.articles = pd.DataFrame() # cache for Articles
-        log_me(self.ds.loc[ : , ['id', 'title']].head(10))
+        if self.ds.shape[0]:
+            log_me(self.ds.loc[ : , ['id', 'title']].head(10))
 
     # The login method is used to obtain a session ID and relevant cookies
     # They are cached in the headers variable
@@ -1202,14 +1203,17 @@ class AlationInstance():
 
         return res_pd
     # The generic_api_post method posts a request to Alation and if necessary checks the status
-    def generic_api_post(self, api, params=None, body=None, official=False):
+    def generic_api_post(self, api, params=None, body=None, data=None, official=False):
         if official:
             headers_final = dict(token=self.token)
         else:
             headers_final = self.headers
             headers_final['Referer'] = self.host + api
 
-        r = requests.post(self.host + api, json=body, params=params, headers=headers_final, verify=self.verify)
+        if body:
+            r = requests.post(self.host + api, json=body, params=params, headers=headers_final, verify=self.verify)
+        elif data:
+            r = requests.post(self.host + api, data=data, params=params, headers=headers_final, verify=self.verify)
 
         if r.status_code:
             r_parsed = r.json()
@@ -1219,20 +1223,20 @@ class AlationInstance():
                 url_job = "/api/v1/bulk_metadata/job/"
                 # Let's wait for the job to finish
                 while (True):
-                    status = self.generic_api_get(api=url_job, params=params, official=True, verify=self.verify)
-                    if status['status'] != 'running':
-                        objects = status['result']
-                        # if objects:
-                        #     # for error in error_objects:
-                        #     print(objects)
-                        # else:
-                        #     #print(status)
-                        #     pass
+                    status = self.generic_api_get(api=url_job, params=params, official=True)
+                    try:
+                        if status['status'] != 'running':
+                            objects = status['result']
+                            break
+                        else:
+                            print(f"Job still running: {status}")
+                    except:
+                        log_me(f"No good status: {r.text}")
                         break
                 r_parsed = status
             return r_parsed
         else:
-            return r.content
+            return r.text
 
     # The generic_api_post method posts a request to Alation and if necessary checks the status
     def generic_api_put(self, api, params=None, body=None, official=False):
@@ -1262,7 +1266,7 @@ class AlationInstance():
             try:
                 return r.json()
             except:
-                return r.content # for LogicalMetadata API which does not use standard JSON
+                return r.text # for LogicalMetadata API which does not use standard JSON
         else:
-            return r.content
+            return r.text
 
