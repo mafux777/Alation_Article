@@ -3,8 +3,8 @@ import json
 import pandas as pd
 import time
 import random
-from AlationInstance import AlationInstance
-from alationutil import log_me
+from sudoku.AlationInstance import AlationInstance
+from sudoku.alationutil import log_me
 from config import args
 from numpy import log10
 from datetime import datetime, timezone
@@ -49,7 +49,7 @@ else:
 # bi_server = 2
 
 # =========== Handling of the input file from Customer, containing reports in folders ===============
-report_df = pd.read_csv('~/Downloads/mysql-analytics_run_1_stmt_1_0 (3).csv', sep=',')
+report_df = pd.read_csv('./sampledata/crypto.csv', sep=',')
 report_df.index = report_df.id
 
 
