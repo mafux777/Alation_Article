@@ -1,10 +1,10 @@
 import pandas as pd
 import datetime
-import abok
+from abok import abok
 import json
 from bs4 import BeautifulSoup
 
-from alationutil import log_me, unpack_id, unpack_title, unpack_children
+from sudoku.alationutil import log_me, unpack_id, unpack_title, unpack_children
 from collections import deque
 
 import pdfkit
@@ -217,7 +217,7 @@ class Article():
             html = html + self.article.body[i] + '</p>'
         html2 = abok.clean_up(html)
         html2 = html2 + additional_html
-        pdfkit.from_string(html2, ABOKpdffilename, options=bodyoptions, css="alation.css", cover='cover.html', cover_first=True)
+        pdfkit.from_string(html2, ABOKpdffilename, options=bodyoptions, css="css/alation.css")
         log_me('pdfkit finished processing')
 
     # the following code could be made more elegant if we can guarantee that there are no orphans in the

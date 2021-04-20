@@ -5,9 +5,7 @@ import json
 from bs4 import BeautifulSoup
 import urllib
 
-from alationutil import log_me
-#from secure_copy import list_files
-
+from sudoku.alationutil import log_me, list_files, extract_files
 import errno
 import os
 import zipfile

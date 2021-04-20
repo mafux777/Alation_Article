@@ -9,7 +9,7 @@
 
 import re
 import pdfkit
-from alationutil import *
+from sudoku.alationutil import *
 import os
 from pathlib import Path
 
@@ -83,6 +83,6 @@ if __name__ == "__main__":
     with open('clean_html.html', 'r') as html:
          html_str = html.read()
     t = clean_up(html_str)
-    pdfkit.from_string(t, "abok-test.pdf", css="alation.css")
+    pdfkit.from_string(t, "abok-test.pdf", css="css/alation.css")
     pass
 
