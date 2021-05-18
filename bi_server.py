@@ -171,7 +171,8 @@ for i, report in report_df.iloc[0:25].iterrows():
     report_name = report["name"]
     bi_report_details = [{
         "name": report['name'],
-        "external_id": f'{file_key}+{bi_server}+{portal_path}+{report_name}',
+        # "external_id": f'{file_key}+{bi_server}+{portal_path}+{report_name}',
+        "external_id": f'{file_key}{bi_server}{report_name}',
         "created_at": date_created,
         "last_updated": date_created,
         # "source_url": f'{report.BoLink}',
@@ -198,7 +199,8 @@ for i, report in report_df.iloc[0:25].iterrows():
     # read it back so we can learn the Alation ID
         r = alation.generic_api_get(api=f'{bi_server_url}{bi_server}/report/',
                                     params={'keyField': 'external_id',
-                                      'oids': [f'{file_key}+{bi_server}+{portal_path}+{report_name}']})
+                                      'oids': [f'{file_key}{bi_server}{report_name}']})
+                                      # 'oids': [f'{file_key}+{bi_server}+{portal_path}+{report_name}']})
         if len(r):
             break
         else:
