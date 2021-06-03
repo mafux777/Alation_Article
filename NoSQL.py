@@ -5,8 +5,8 @@ from time import sleep
 from datetime import datetime, timezone
 
 # -- ADJUST THE FOLLOWING CONFIG PARAMS
-url = "https://2021-2-sandbox.alationproserv.com"
-headers = dict(token='u2WqKUdj2thkUEmbWxhp7HOx_2G9MlAkjXPqnc8R2w4')
+url = "http://localhost:8000"
+headers = dict(token='b-b14fUqvc7FhxQq4uIWXUpGiL0fafJbJgBVAJWH7Rw')
 filename = "/Users/matthias.funke/Downloads/ctm_json.json"
 folder='root.bq' # should contain 1 dot
 collection=f'CTM-v4' # should not contain any dots
@@ -74,7 +74,6 @@ params=dict(dbtype="generic_nosql",
             title=f"DS {random}",
             is_virtual=True,
             deployment_setup_complete=True)
-headers = dict(token='B3vsv3r2MtJlobY6x6f_8jx5d7PiW9V_9WOVrvhadC0')
 r = requests.post(url=url_1, headers=headers, json=params, verify=False)
 
 status = (json.loads(r.content))
