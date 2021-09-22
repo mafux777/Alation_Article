@@ -1,0 +1,14 @@
+﻿Source Table,Source Column - Title,Source Column - Physical Name,Data Flow Object (Description),Target Table,Target Column - Title,Target Column - Physical Name
+Intrader Virtual Table 1,Current Face,A_CURR_PAR,Current Face + Remaining Disc/Prem,Intrader Virtual Table 2,Amortized Cost/Cost Basis,A_AMRTZD_COST
+Intrader Virtual Table 1,Remaining disc/prem,A_UNAMRTZ_UNACCRTN,Current Face + Remaining Disc/Prem,Intrader Virtual Table 2,Amortized Cost/Cost Basis,A_AMRTZD_COST
+AMTrust Virtual Table 2,Amortized Cost/Cost Basis,A_AMRTZD_COST,,CMDW Position Master Virtual Table 1,Amortized Cost/Cost Basis,A_AMRTZD_COST
+Intrader Virtual Table 1,Amortized Cost/Cost Basis,A_AMRTZD_COST,,CMDW Position Master Virtual Table 1,Amortized Cost/Cost Basis,A_AMRTZD_COST
+AMTrust Virtual Table 1,Amortized Cost/Cost Basis,A_AMRTZD_COST,,CMDW Position Master Virtual Table 1,Amortized Cost/Cost Basis,A_AMRTZD_COST
+Newport Virtual Table 1,Amortized Cost/Cost Basis,A_AMRTZD_COST,,CMDW Position Master Virtual Table 1,Amortized Cost/Cost Basis,A_AMRTZD_COST
+CMDW Position Master Virtual Table 1,Amortized Cost/Cost Basis,A_AMRTZD_COST,,EDW Core Virtual Table 1,Amortized Cost/Cost Basis,A_AMRTZD_COST
+EDW Core Virtual Table 1,Amortized Cost/Cost Basis,A_AMRTZD_COST,,AXM_INVSTMT_CMA_MO_CUR_DMV,Amortized Cost/Cost Basis,A_AMRTZD_COST
+AXM_INVSTMT_CMA_MO_CUR_DMV,Amortized Cost/Cost Basis,A_AMRTZD_COST,,FFIEC 031 - Schedule RC-B Virtual Table 1,FFIEC 031 - Schedule RC-B,Line Item 1.A.
+AXM_INVSTMT_CMA_MO_CUR_DMV,Amortized Cost/Cost Basis,A_AMRTZD_COST,,FR Y-9C - Schedule HC-B Virtual Table 1,FR Y-9C - Schedule HC-B,Line Item 1.A.
+CMDW Position Master Virtual Table 1,Amortized Cost/Cost Basis,CURR_BOOK_VALUE,,14Q -  B-1 Securities Main Schedule Virtual Table 1,14Q -  B-1 Securities Main Schedule,Main Schedule Column 1
+CMDW Position Master Virtual Table 1,Amortized Cost/Cost Basis,CURR_BOOK_VALUE,,Y15 - Schedule D - Complexity Indicators Virtual Table 1,Y15 - Schedule D - Complexity Indicators,Line Item 11
+CMDW Position Master Virtual Table 1,Amortized Cost/Cost Basis,CURR_BOOK_VALUE,,Y15 - Schedule D - Complexity Indicators Virtual Table 1,Y15 - Schedule D - Complexity Indicators,Line Item M1

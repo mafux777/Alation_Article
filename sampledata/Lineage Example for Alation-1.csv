@@ -1,0 +1,17 @@
+﻿Virtual Data Sources Name,Virtual Schema,Virtual Table,Virtual Column - Physical Name,Virtual Column - Title
+Virtual Data Source Test,AMTrust System,AMTrust Virtual Table 2,A_AMRTZD_COST,Amortized Cost/Cost Basis
+Virtual Data Source Test,AMTrust System,AMTrust Virtual Table 1,A_CURR_PAR,Number of Shares
+Virtual Data Source Test,AMTrust System,AMTrust Virtual Table 1,A_BK_PRC ,Purchase Price
+Virtual Data Source Test,Capital Markets ODS,CMDW Position Master Virtual Table 1,A_AMRTZD_COST,Amortized Cost/Cost Basis
+Virtual Data Source Test,Capital Markets ODS,CMDW Position Master Virtual Table 1,CURR_BOOK_VALUE,Amortized Cost/Cost Basis
+Virtual Data Source Test,EDW Core System,EDW Core Virtual Table 1,A_AMRTZD_COST,Amortized Cost/Cost Basis
+Virtual Data Source Test,Intrader System,Intrader Virtual Table 2,A_AMRTZD_COST,Amortized Cost/Cost Basis
+Virtual Data Source Test,Intrader System,Intrader Virtual Table 1,A_CURR_PAR,Current Face
+Virtual Data Source Test,Intrader System,Intrader Virtual Table 1,A_UNAMRTZ_UNACCRTN,Remaining disc/prem
+Virtual Data Source Test,Newport System,Newport Virtual Table 1,A_AMRTZD_COST,Amortized Cost/Cost Basis
+Virtual Report Objects,14Q Report,14Q -  B-1 Securities Main Schedule Virtual Table 1,Main Schedule Column 1,Main Schedule Column 1
+Virtual Report Objects,FFIEC 031 Report,FFIEC 031 - Schedule RC-B Virtual Table 1,Line Item 1.A.,FFIEC 031 - Schedule RC-B
+Virtual Report Objects,FR Y-9C Report,FR Y-9C - Schedule HC-B Virtual Table 1,Line Item 1.A.,Line Item 1.A.
+Virtual Report Objects,Y15 Report,Y15 - Schedule D - Complexity Indicators Virtual Table 1,Line Item 11,Line Item 11
+Virtual Report Objects,Y15 Report,Y15 - Schedule D - Complexity Indicators Virtual Table 1,Line Item M1,Line Item M1
+Emergency,Schema_1,AXM_INVSTMT_CMA_MO_CUR_DMV,A_AMRTZD_COST,Amortized Cost/Cost Basis
