@@ -11,6 +11,80 @@ import os
 import zipfile
 from collections import OrderedDict, deque, defaultdict
 from math import isnan
+from datetime import datetime, timezone
+import uuid
+import re
+
+
+
+class Folder():
+    # The registry is a dictionary of folders
+    # key: external_id
+    # value: the Folder object, which contains name and parent Folder
+    # ...and gets enriched later by the internal ID
+    registry = {}
+    def __init__(self, name, parent=None):
+        name = name.strip()
+        self.name = name # this is the short name
+        self.parent = parent # this is the long name of the parent
+
+        reg = f'{self}' # this is a long name, taking advantage of recursion, calling __repr__
+        # The external ID includes BI Server ID and a random component, too
+        # that will be the key to the registry
+        external_id = reg.__hash__()
+        if external_id not in Folder.registry:
+            # ---- create BI folder -----------
+            # bif = [create_folder_object(name, external_id, parent_folder=parent)]
+            # api = f'{bi_server_url}{bi_server}/folder/'
+            # if parent:
+            #     print(f'Creating "{parent}/{name}"')
+            # else:
+            #     print(f'Creating "{name}"')
+            # r = alation.generic_api_post(api, body=bif)
+            # if 'status' in r:
+            #     if r['status'] == 'successful':
+            #         log_me(f'{external_id}:{r["result"]}')
+            # ---- keep track of what was created ----
+            Folder.registry[external_id] = self
+    def __repr__(self):
+        if self.parent:
+            return f'{self.parent}/{self.name}'
+        else:
+            return self.name
+
+    @classmethod
+    def get_or_create_from_path(cls, path, parent=None, split_char='/'):
+        path_items = path.split(split_char)
+        n = len(path_items)
+        if n == 1:
+            return Folder(path_items[0], parent)
+        # reduce phase... make first item parent
+        p = cls.get_or_create_from_path(path_items[0], parent=parent)
+        # call recursively, but with one less item on the path
+        q = cls.get_or_create_from_path(path='/'.join(path_items[1:]), parent=p)
+        return q
+
+
+# Safe method for converting a number in str or float format to int
+def to_int(n):
+    if pd.isnull(n):
+        return 0
+    if isinstance(n, str):
+        try:
+            f = float(n)
+            rf = round(f)
+            return int(rf)
+        except Exception as e:
+            log_me(f"Could not convert {n} to int.")
+            return None
+    elif isinstance(n, float):
+        rf = round(n)
+        return int(rf)
+    elif isinstance(n, int):
+        return n
+    else:
+        log_me(f"Could not convert {n} to int.")
+
 
 # The AlationInstance class is a handle to an Alation server defined by a URL
 # A server admin user name and password needs to be provided and all API actions
@@ -21,22 +95,29 @@ class AlationInstance():
     # password: could be the LDAP password, as well
     # verify: Requests verifies SSL certificates for HTTPS requests, just like a web browser.
     # By default, SSL verification is enabled, and Requests will throw a SSLError if it’s unable to verify the certificate
-    def __init__(self, host, account, password, verify=True):
+    def __init__(self, host, account, password, refresh_token, user_id,verify=True):
         self.host = host
         self.verify = verify
         self.account = account
+        self.refresh_token = refresh_token
+        self.user_id = user_id
         self.password = password
         self.token = self.get_token()
-        self.headers = self.login(account, password)
+        self.headers = dict(token=self.token)
+        # self.headers = self.login(account, password)
+        self.api_columns = ['otype', 'id']
+        self.external_id = {}
+        self.bi_folders = None
+        self.bi_reports = None
         log_me("Getting existing custom fields")
         self.existing_fields = self.get_custom_fields() # store existing custom fields
-        log_me("Getting existing templates")
-        self.existing_templates = self.get_templates() # store existing templates
-        log_me("Getting existing data sources")
-        self.ds = self.getDataSources()
-        self.articles = pd.DataFrame() # cache for Articles
-        if self.ds.shape[0]:
-            log_me(self.ds.loc[ : , ['id', 'title']].head(10))
+        # log_me("Getting existing templates")
+        # self.existing_templates = self.get_templates() # store existing templates
+        # log_me("Getting existing data sources")
+        # self.ds = self.getDataSources()
+        # self.articles = pd.DataFrame() # cache for Articles
+        # if self.ds.shape[0]:
+        #     log_me(self.ds.loc[ : , ['id', 'title']].head(10))
 
     # The login method is used to obtain a session ID and relevant cookies
     # They are cached in the headers variable
@@ -52,11 +133,19 @@ class AlationInstance():
         csrftoken = s.cookies.get('csrftoken')
 
         # login with user name and password (and token)
-        payload = {"csrfmiddlewaretoken": csrftoken, "ldap_user": account, "password": password}
+        # payload = {"csrfmiddlewaretoken": csrftoken, "ldap_user": account, "password": password}
+        # headers = {"Referer": URL}
+        # log_me("Logging in to {}".format(URL))
+        # r = s.post(URL, data=payload, verify=self.verify, headers=headers)
+        payload = {"csrfmiddlewaretoken": csrftoken,
+                   "ldap_user": account,
+                   "password": password}
         headers = {"Referer": URL}
-        log_me("Logging in to {}".format(URL))
-        r = s.post(URL, data=payload, verify=self.verify, headers=headers)
+        headers['content-type'] = 'application/x-www-form-urlencoded'
+        print("Logging in to {}".format(URL))
+        params = dict(next=None)
 
+        r = s.post(URL, data=payload, verify=self.verify, headers=headers, params=params)
         # get the session ID and store it for all future API calls
         sessionid = s.cookies.get('sessionid')
         if not sessionid:
@@ -71,7 +160,13 @@ class AlationInstance():
     # The get_custom_fields method returns a pandas DataFrame with all custom fields
     # The Alation ID will also be the ID of the DataFrame
     def get_custom_fields(self, template='all'): # this method returns a DataFrame
-        fields = pd.DataFrame(self.generic_api_get("/ajax/custom_field/"))
+        my_fields = []
+        next="/integration/v2/custom_field/"
+        while(next):
+            r = requests.get(self.host + next, headers=dict(token=self.token), params={}, verify=self.verify)
+            next = r.headers.get("x-next-page")
+            my_fields.extend(r.json())
+        fields = pd.DataFrame(my_fields)
         fields.index = fields.id
         return fields.sort_index()
 
@@ -157,6 +252,10 @@ class AlationInstance():
 
     # The del_article method deletes an existing article and returns nothing
     def del_article(self, id):
+        url = self.host + "/integration/v1/article/" + str(id) + "/"
+        r = requests.delete(url, headers=self.headers, verify=self.verify)
+
+    def del_bi_server(self, id):
         url = self.host + "/integration/v1/article/" + str(id) + "/"
         r = requests.delete(url, headers=self.headers, verify=self.verify)
 
@@ -279,21 +378,21 @@ class AlationInstance():
         return dd
 
     def get_token(self):
-        change_token = "/api/v1/changeToken/"  # if you already have a token, use this url
-        new_token = "/api/v1/getToken/"  # if you have never generated a token, use this url
-        data = dict(username=self.account, password=self.password)
-        response = requests.post(self.host + new_token, data=data, verify=self.verify)
-        api_token = response.text
-        if api_token == "EXISTING":
-            response = requests.post(self.host + change_token, data=data, verify=self.verify)
-            api_token = response.text
+        data = {
+            "refresh_token": self.refresh_token,
+            "user_id": self.user_id
+        }
+
+        # Get APIAccessToken for user using the RefreshToken.
+        res = requests.post(f'{self.host}/integration/v1/createAPIAccessToken/', data=data).json()
+        api_token = res.get('api_access_token')
         return api_token
 
     # The get_templates method returns a DataFrame with all templates, sorted and indexed by ID
     # This includes built-in templates
     def get_templates(self):
         api = "/integration/v1/custom_template/"
-        templates = pd.DataFrame(self.generic_api_get(api))
+        templates = pd.DataFrame(self.generic_api_get(api, official=True))
         templates.index = templates.id
         return templates.sort_index()
 
@@ -475,13 +574,13 @@ class AlationInstance():
         # Template name needs to be part of the URL
         template_name = template_name.replace(" ", "%20")
         url = self.host + bulk + template_name + "/article"
-        if custom_fields.empty:
-            body = article.bulk_api_body()
-        else:
+        # if custom_fields.empty:
+        #     body = article.bulk_api_body()
+        # else:
         # Body needs to be a text with one JSON per line
         # Note we are (no longer)sending all custom fields to the function
-            custom_fields_pd = self.existing_fields.loc[custom_fields, :]
-            body = article.bulk_api_body()
+        custom_fields_pd = self.existing_fields.loc[custom_fields, :]
+        body = article.bulk_api_body()
         params = dict(replace_values=True, create_new=True)
         r = requests.post(url, data=body, headers=self.headers, params=params, verify=self.verify)
         if not r.status_code:
@@ -619,7 +718,7 @@ class AlationInstance():
 
     # The getDataSources method downloads all data sources (metadata only) as a DataFrame
     def getDataSources(self):
-        ds = pd.DataFrame(self.generic_api_get("/ajax/datasource/"))
+        ds = pd.DataFrame(self.generic_api_get("/integration/v1/datasource/", official=True))
         log_me("Total number of data sources: {}".format(ds.shape[0]))
         return ds
 
@@ -1267,4 +1366,803 @@ class AlationInstance():
                 return r.text # for LogicalMetadata API which does not use standard JSON
         else:
             return r.text
+
+
+    def add_path_to_folders(self, my_folders, folders):
+        for i, f in my_folders.iterrows():
+            parent_folder = folders.at[i, "parent_folder"]
+            if parent_folder:
+                parent_folder_path = folders.loc[folders.external_id == parent_folder, 'path'].iloc[0]
+                folders.loc[i, 'path'] += f"{parent_folder_path}//{f['name']}"
+            else:
+                folders.loc[i, 'path'] += f"{f['name']}"
+        # now, children
+        children = folders.loc[folders.parent_folder.isin(my_folders.external_id)]
+        if children.shape[0]:
+            self.add_path_to_folders(children, folders)
+        return True
+
+    def get_bi_folders(self, bi_server_id):
+        my_folders = []
+        next = f"/integration/v2/bi/server/{bi_server_id}/folder/"
+        while(next):
+            log_me(f"Downloading all BI folders from {next}")
+            r = requests.get(self.host + next, headers=dict(token=self.token), params={}, verify=self.verify)
+            next = r.headers.get("x-next-page")
+            j = r.json()
+            my_folders.extend(j)
+        if my_folders:
+            folders = pd.DataFrame(my_folders)
+            folders['otype'] = "bi_folder"
+            folders['path'] = ""
+            self.api_columns.extend(list(folders.columns))
+            # -- work on the path --
+            set_path = self.add_path_to_folders(folders.loc[folders.parent_folder.isna()], folders)
+            # cache the results for later use
+            self.bi_folders = folders.set_index(['otype', 'id'], drop=True)
+            return self.bi_folders
+
+    def get_bi_reports(self, bi_server_id):
+        my_reports = []
+        next = f"/integration/v2/bi/server/{bi_server_id}/report/"
+        while(next):
+            log_me(f"Downloading {next}")
+            r = requests.get(self.host + next, headers=dict(token=self.token), params={}, verify=self.verify)
+            next = r.headers.get("x-next-page")
+            my_reports.extend(r.json())
+        if my_reports:
+            reports = pd.DataFrame(my_reports)
+            reports['otype'] = "bi_report"
+            self.api_columns.extend(list(reports.columns))
+            return reports.set_index(['otype', 'id'], drop=True)
+
+    def get_bi_report_cols(self, bi_server_id):
+        my_cols = []
+        next = f"/integration/v2/bi/server/{bi_server_id}/report/column/"
+        while(next):
+            log_me(f"Downloading {next}")
+            r = requests.get(self.host + next, headers=dict(token=self.token), params={}, verify=self.verify)
+            next = r.headers.get("x-next-page")
+            my_cols.extend(r.json())
+        if my_cols:
+            report_cols = pd.DataFrame(my_cols)
+            report_cols['otype'] = "bi_report_column"
+            self.api_columns.extend(list(report_cols.columns))
+            return report_cols.set_index(['otype', 'id'], drop=True)
+
+    def get_custom_field_values_for_oids(self, okeys):
+        my_fields = []
+        api = f"/integration/v2/custom_field_value/"
+        for key in okeys:
+            otype = key[0]
+            oid = key[1]
+            params = dict(otype=otype, oid=oid)
+            my_field = {}
+            r = requests.get(self.host + api, headers=dict(token=self.token), params=params, verify=self.verify)
+            fields = r.json()
+            if len(fields)==0:
+                continue
+            for f in fields:
+                field_details = self.get_field(f['field_id'])
+                if field_details.field_type=="OBJECT_SET":
+                    for v in f['value']:
+                        key = f"{field_details.name_singular.lower()}:{v['otype']}"
+                        fully_qualified = self.get_fully_qualified_name(v['otype'], v['oid'])
+                        if key in my_field:
+                            my_field[key] += f";{fully_qualified}"
+                        else:
+                            my_field[key] = f"{fully_qualified}"
+                else:
+                    my_field[field_details.name_singular.lower()] = f['value']
+            my_field['id'] = oid
+            my_field['otype'] = otype
+            log_me(my_field)
+            my_fields.append(my_field)
+        custom_field_values = pd.DataFrame(my_fields)
+        return custom_field_values.set_index(['otype', 'id'])
+
+    def get_field(self, field_id):
+        return self.existing_fields.loc[field_id]
+
+    def validate_headers(self, headers):
+        validated_fields = {}
+        self.existing_fields["name_lower"] = self.existing_fields.name_singular.apply(str.lower)
+        for my_header in set(headers) - set(self.api_columns):
+            if ":" in my_header:
+                components = my_header.split(":")
+                field_name = components[0]
+                field_type = components[1]
+            else:
+                field_name = my_header
+                field_type = None
+            my_field = self.existing_fields.loc[self.existing_fields.name_lower==field_name]
+            if my_field.empty:
+                # log_me(f"Cannot find a field with name {field_name}")
+                continue
+            my_field_details = my_field.iloc[0]
+            validated_fields[my_header] = my_field_details
+        return validated_fields
+
+    def upload_lms(self, validated_df, fields, server_id=None):
+        my_payload = []
+        for _, my_object in validated_df.iterrows():
+
+            if pd.isnull(my_object.id):
+                my_id = str(self.convert_external_id(my_object.otype,
+                                                 my_object.external_id,
+                                                 server_id))
+                if not my_id:
+                    log_me(f"Skipping {my_object.external_id}")
+                    continue
+            else:
+                my_id = str(my_object.id)
+
+            log_me(f"Tagging {self.host}/bi/v2/{my_object.otype[3:]}/{to_int(my_id)} with external ID: {my_object.external_id}")
+            tag = self.tag_an_object(my_object.otype, my_id, my_object.external_id)
+            pre_existing_values = defaultdict(list)
+            for k, v in fields.items():
+                if pd.isnull(my_object[k]):
+                    continue
+                if v['field_type']=="MULTI_PICKER":
+                    value = []
+                    for my_option in v["options"]:
+                        if my_option in my_object[k]:
+                            value.append(my_option)
+                elif v['field_type']=="OBJECT_SET":
+                    value = []
+                    type = k.split(":")[1]
+                    if type in v['allowed_otypes']:
+                        pre_value = str(my_object[k])
+                        log_me(f"{type}: {pre_value}")
+                        for item in pre_value.split(";"):
+                            my_obj_id = self.reverse_qualified_name(type, item)
+                            if my_obj_id:
+                                value.append(dict(otype=type,
+                                                  oid=str(to_int(my_obj_id))))
+                            else:
+                                log_me(f"Could not append item {item}")
+                        pre_existing_values[v['id']].extend(value)
+                        value = None
+                else:
+                    value = my_object[k]
+
+
+                # Only do non-object-sets right now
+                if value:
+                    payload = dict(
+                        field_id = int(v['id']),
+                        ts_updated = datetime.now(timezone.utc).isoformat(),
+                        otype = my_object.otype,
+                        oid = to_int(my_id),
+                        # oid = str(my_object.id),
+                        value = value
+                    )
+                    # one by one for now
+                    api = "/integration/v2/custom_field_value/"
+                    try:
+                        r = requests.put(self.host + api, headers=dict(token=self.token), json=[payload], verify=self.verify)
+                        j = r.json()
+                        updated = j.get("updated_field_values")
+                        new_field_values = j.get("new_field_values")
+                        errors = j.get("errors")
+                        if updated:
+                            log_me(f"Updated {k}={my_object[k]}")
+                        elif new_field_values:
+                            log_me(f"New value {k}={my_object[k]}")
+                        if errors:
+                            log_me(f"---ERROR--- {k}={my_object[k]} -- {errors}")
+                    except Exception as e:
+                        log_me(f"Exception for {k}: {e}")
+
+            for field_id, value in pre_existing_values.items():
+                field_details = self.get_field(field_id)
+                payload = dict(
+                    field_id=int(field_id),
+                    ts_updated=datetime.now(timezone.utc).isoformat(),
+                    otype=my_object.otype,
+                    oid=to_int(my_id),
+                    value=value
+                )
+                # one by one for now
+                api = "/integration/v2/custom_field_value/"
+                # log_me(f"Working on: {k}")
+                try:
+                    r = requests.put(self.host + api, headers=dict(token=self.token), json=[payload], verify=self.verify)
+                    j = r.json()
+                    updated = j.get("updated_field_values")
+                    new_field_values = j.get("new_field_values")
+                    errors = j.get("errors")
+                    if updated:
+                        log_me(f"Updated {field_details.name_singular}={value}")
+                    elif new_field_values:
+                        log_me(f"New value {field_details.name_singular}={value}")
+                    if errors:
+                        log_me(f"---ERROR--- {field_details.name_singular}={value}")
+                        log_me(f"{errors}")
+                except Exception as e:
+                    log_me(f"Exception for {field_id}/{value}: {e}")
+
+    def create_bi_server(self, uri, title):
+        r = requests.post(self.host + "/integration/v2/bi/server/",
+                          headers=dict(token=self.token),
+                          json=[dict(uri=uri, title=title)],
+                          verify=self.verify)
+        return r.json()
+
+    def validate_folder(self, external_id):
+        try:
+            if external_id in list(self.bi_folders.external_id):
+                # log_me(f"Since {external_id} is cached, it exists!")
+                return external_id
+            else:
+                log_me(f"{external_id} is not a known folder.")
+                return external_id
+
+        except:
+            log_me(f"{external_id} is not a known folder.")
+
+    def valid_str(self, my_str):
+        if pd.isnull(my_str) or pd.isna(my_str):
+            return "null"
+        elif my_str is None:
+            return "none"
+        elif isinstance(my_str, str):
+            return my_str
+        else:
+            return ""
+
+    def valid_external_id(self, my_str):
+        if pd.isnull(my_str) or pd.isna(my_str):
+            return str(uuid.uuid4())
+        elif my_str is None:
+            return str(uuid.uuid4())
+        elif isinstance(my_str, str) and str!='':
+            return my_str
+        else:
+            return str(uuid.uuid4())
+
+    def valid_float(self, my_float):
+        if pd.isnull(my_float) or pd.isna(my_float):
+            return 0.0
+        elif my_float is None:
+            return 0.0
+        elif isinstance(my_float, float):
+            return my_float
+        else:
+            return 0.0
+
+    def valid_reports(self, parents):
+        validated_reports = []
+        try:
+            parents = json.loads(parents.replace("'", '"'))
+            for external_id in set(parents).intersection(self.bi_reports.external_id):
+                log_me(f"Since {external_id} is cached, assuming it exists!")
+                validated_reports.append(external_id)
+        except:
+            parents = []
+        return  validated_reports
+
+    def valid_report_type(self, type):
+        try:
+            type_lower = type.lower()
+            if type_lower == "dashboard":
+                return "dashboard"
+            else:
+                return "simple"
+        except:
+            return "simple"
+
+    def tag_an_object(self, otype, oid, tag):
+        api=f"/integration/tag/{tag}/subject/"
+
+        r = requests.post(self.host + api,
+                          headers=dict(token=self.token),
+                          json=dict(otype=otype, oid=oid),
+                          verify=self.verify)
+        if r.status_code:
+            return tag
+
+    def sync_bi(self, bi_server_id, df):
+        self.bi_server_id = bi_server_id
+        api_cols = {
+            "bi_folder": {"name" : self.valid_str,
+                          "external_id" : self.valid_external_id,
+                          "created_at" : self.valid_str,
+                          "last_updated" : self.valid_str,
+                          "source_url" : self.valid_str,
+                          "bi_object_type" : self.valid_str,
+                          "description_at_source": self.valid_str,
+                          "owner": self.valid_str,
+                          "num_reports" : to_int,
+                          "num_report_accesses" : to_int,
+                          "parent_folder": self.validate_folder},
+            "bi_report": {"name" : self.valid_str,
+                          "external_id" : self.valid_str,
+                          "created_at" : self.valid_str,
+                          "last_updated" : self.valid_str,
+                          "source_url" : self.valid_str,
+                          "bi_object_type" : self.valid_str,
+                          "description_at_source": self.valid_str,
+                          "report_type": self.valid_report_type,
+                          "owner": self.valid_str,
+                          "num_accesses" : to_int,
+                          "popularity" : self.valid_float,
+                          "parent_folder": self.valid_str,
+                          "parent_reports": self.valid_reports,
+                          },
+            "bi_report_column": {"name" : self.valid_str,
+                          "external_id" : self.valid_str,
+                          "created_at" : self.valid_str,
+                          "last_updated" : self.valid_str,
+                          "source_url" : self.valid_str,
+                          "bi_object_type" : self.valid_str,
+                          "description_at_source": self.valid_str,
+                          "data_type": self.valid_str,
+                          "role": self.valid_str,
+                          "expression": self.valid_str,
+                          "report": self.valid_str,
+                          # "values": list
+                          }
+        }
+        endpoint = dict(bi_folder="folder", bi_report="report", bi_report_column="report/column", )
+        ts_updated = datetime.now(timezone.utc).isoformat()
+        df["created_at"] = df.created_at.fillna(ts_updated)
+        df["last_updated"] = df.last_updated.fillna(ts_updated)
+
+        # do the folders first
+        otype = "bi_folder"
+        if self.bi_folders is None:
+            self.get_bi_folders(bi_server_id)
+
+        if self.bi_folders is None or self.bi_folders.empty:
+            done = []
+        else:
+            done = list(self.bi_folders.external_id)
+
+        payload_cols = api_cols[otype]
+        payload = df.loc[df.otype == otype, payload_cols].sort_values("created_at")
+        for col, op in payload_cols.items():
+            payload[col] = payload[col].apply(op)
+        still_to_do = list(payload.external_id)
+
+        def recursive_folder_work(folders):
+            """
+            Creates and validates creation of folders, starting with top level
+            :param folders: folders to be created right now (they should either not have parents,
+            or the parents have been created already)
+            Children will be recursively created, too
+            :return: True if successful
+            """
+            # Create the folders passed as parameters
+            my_payload = []
+            num_rows = folders.shape[0]
+            if num_rows == 0:
+                # Let's make sure there is no more work to do -- recursively!
+                recursive_folder_work(payload.loc[payload.external_id.isin(still_to_do)])
+                return True
+            log_me(f"Rows to process: {num_rows}")
+            done_this_job = []
+            for _, f in folders.iterrows():
+                if not still_to_do:
+                    break
+                if f.external_id in done:
+                    log_me(f"Warning: {f.external_id} was already created!")
+                    done_this_job.append(f.external_id)
+                    still_to_do.remove(f.external_id)
+                    continue
+                if f.external_id in still_to_do:
+                    # see if the parent folder is already there. otherwise, call this
+                    if f.parent_folder and f.parent_folder not in done:
+                        # let's see if have details for the parent folder
+                        parent = folders.loc[folders.external_id==f.parent_folder]
+                        if parent.shape[0]==1:
+                            recursive_folder_work(parent)
+                        else:
+                            log_me(f"Cannot create a folder without details for the parent!")
+                            still_to_do.remove(f.external_id)
+                            continue
+
+                    my_dict = dict(f)
+                    if not my_dict['parent_folder']:
+                        del my_dict['parent_folder']
+                    my_payload.append(my_dict)
+                    done.append(f.external_id)
+                    done_this_job.append(f.external_id)
+                    still_to_do.remove(f.external_id)
+            if my_payload:
+                r = requests.post(self.host + f"/integration/v2/bi/server/{bi_server_id}/{endpoint[otype]}/",
+                                  headers=dict(token=self.token),
+                                  json=my_payload,
+                                  verify=self.verify)
+                if(self.check_job_status(r)):
+                    # Now let's ensure the folders actually got created
+                    api = f"/integration/v2/bi/server/{bi_server_id}/folder/"
+                    r = requests.get(self.host + api, headers=dict(token=self.token),
+                                     params=dict(oids=",".join(done_this_job),
+                                                 keyField="external_id"),
+                                     verify=self.verify)
+                    folders_requested = pd.DataFrame(my_payload)
+                    folders_created = pd.DataFrame(r.json())
+                    folders_created['otype'] = "bi_folder"
+                    folders_created['tag'] = folders_created.apply(lambda y:
+                                                                   self.tag_an_object(
+                                                                       y['otype'],
+                                                                       y['id'],
+                                                                       y.external_id
+                                                                   ), axis=1)
+
+                    folders_created['path'] = ""
+                    self.api_columns.extend(list(folders_created.columns))
+                    if not folders_created.empty:
+                        folders_created = folders_created.set_index(['otype', 'id'], drop=True)
+                        self.bi_folders = pd.concat([self.bi_folders, folders_created])
+                        # -- work on the path --
+                        """We just created some folders, we know what their parents are.
+                        We want to add the parent to the newly created folders.
+                        We find the information about the parents in the cache,
+                        since either they were created earlier or downloaded"""
+                        def return_path_of_parent_folder(folder):
+                            external_id_of_parent = folder.parent_folder
+                            if not external_id_of_parent:
+                                log_me(f"{folder['name']} is a top level folder.")
+                                return folder['name']
+                            index_of_folder = self.bi_folders.loc[self.bi_folders.external_id==external_id_of_parent].index
+                            if not index_of_folder.empty:
+                                path = self.bi_folders.loc[index_of_folder, "path"].iloc[0]
+                                return path + "//" + folder['name']
+                            else:
+                                log_me(f"{folder} does not seem to have a path.")
+                        self.bi_folders['path'] = self.bi_folders.apply(return_path_of_parent_folder, axis=1)
+                        # set_path = self.add_path_to_folders(folders_created.loc[folders_created.parent_folder.isna()],
+                        #                                     self.bi_folders)
+                    print(self.bi_folders.loc[folders_created.index, ['path','name']].sort_index())
+                    missing = folders_requested.loc[set(folders_requested.external_id)-set(folders_created.external_id)]
+                    if not missing.empty:
+                        log_me(f"Some folders are missing:")
+                        print(folders_created.loc[:, ['path', 'name']].sort_index())
+
+            # Now let's create some children...
+            children = payload.loc[payload.parent_folder.isin(done_this_job)]
+            if children.shape[0]:
+                recursive_folder_work(children)
+            return True
+
+
+        # if recursive_folder_work(payload.loc[payload.parent_folder.isnull()]):
+        if recursive_folder_work(payload):
+            del api_cols[otype]
+        else:
+            log_me(f"Creation of BI Folders seems to have failed.")
+
+        missing_reports = []
+        for otype, payload_cols in api_cols.items():
+            payload = df.loc[df.otype==otype, payload_cols].sort_values("created_at")
+            for col, op in payload_cols.items():
+                payload[col] = payload[col].apply(op)
+            if self.bi_reports is None:
+                self.bi_reports = self.get_bi_reports(self.bi_server_id)
+            # for col, op in payload_cols.items():
+            #     payload[col] = payload[col].apply(op)
+            my_payload = []
+            nrows = payload.shape[0]
+            for n, row in payload.reset_index().iterrows():
+                if otype=="bi_report":
+                    # validate BI report parent folder...
+                    parent_folder = row.get('parent_folder')
+                    if parent_folder not in list(self.bi_folders.external_id):
+                        log_me(f"Report {row['name']} does not have a parent folder.")
+                        missing_reports.append(row['external_id'])
+                        continue
+                if otype=="bi_report_column":
+                    report = row.get("report")
+                    if report in missing_reports:
+                        continue
+                    if report not in list(self.bi_reports.external_id):
+                        log_me(f"Report col {row['name']} does not have a valid parent report: {report}")
+                        missing_reports.append(report)
+                        continue
+
+                my_dict = dict(row)
+                del my_dict['index']
+                my_payload.append(my_dict)
+            if my_payload:
+                r = requests.post(self.host + f"/integration/v2/bi/server/{bi_server_id}/{endpoint[otype]}/",
+                                  headers=dict(token=self.token),
+                                  json=my_payload,
+                                  verify=self.verify)
+                if self.check_job_status(r):
+                    continue
+                else:
+                    log_me(f"{otype} creation was not successful.")
+
+
+    def check_job_status(self, r):
+        j = r.json()
+        job_id = j.get("job_id")
+        if "errors" in j:
+            errors = j['errors']
+            for e in errors:
+                if e:
+                    log_me(e)
+        while(True):
+            r = requests.get(self.host + f"/api/v1/bulk_metadata/job/",
+                              headers=dict(token=self.token),
+                              params=dict(id=job_id),
+                              verify=self.verify)
+            j = r.json()
+            status = j.get("status", "")
+            if "running" in status:
+                time.sleep(3)
+                continue
+            elif "finished" in j.get("msg", ""):
+                log_me(j.get("msg"))
+                log_me(j.get("result"))
+                return True
+            elif "failed" in status:
+                log_me(j.get("msg"))
+                log_me(j.get("result"))
+                break
+            else:
+                log_me(j)
+                break
+
+
+
+    def convert_external_id(self, otype, external_id, server_id):
+        id = self.external_id.get(external_id)
+        if id:
+            return id
+        try:
+            if otype=="bi_folder":
+                r = requests.get(self.host + f"/integration/v2/bi/server/{server_id}/folder/",
+                                 headers=dict(token=self.token),
+                                 params=dict(oids=[external_id],
+                                             keyField="external_id"),
+                                 verify=self.verify)
+            elif otype=="bi_report":
+                r = requests.get(self.host + f"/integration/v2/bi/server/{server_id}/report/",
+                                 headers=dict(token=self.token),
+                                 params=dict(oids=[external_id],
+                                             keyField="external_id"),
+                                 verify=self.verify)
+            elif otype=="bi_report_column":
+                r = requests.get(self.host + f"/integration/v2/bi/server/{server_id}/report/column/",
+                                 headers=dict(token=self.token),
+                                 params=dict(oids=[external_id],
+                                             keyField="external_id"),
+                                 verify=self.verify)
+            else:
+                log_me(f"Don't know how to find {otype} with ID {external_id}")
+                return
+
+            j = r.json()
+            if len(j) == 1:
+                self.external_id[external_id] = j[0]['id']
+                return int(j[0]['id'])
+            else:
+                log_me(f"Could not find {otype} with ID {external_id}")
+                return
+        except Exception as e:
+            log_me(f"EXCEPTION ({e}): Could not find {otype} with ID {external_id}")
+            return
+
+    def get_fully_qualified_name(self, otype, id):
+        if otype=="data":
+            return f"{id}"
+        elif otype=="schema":
+            schema = requests.get(self.host + f"/integration/v2/schema/",
+                                 headers=dict(token=self.token),
+                                 params=dict(id=id),
+                                 verify=self.verify)
+            if schema.status_code:
+                my_schema = schema.json()[0]
+                ds_id = my_schema.get('ds_id')
+                schema_name = my_schema.get('name')
+                return f"{ds_id}.{schema_name}"
+            else:
+                log_me(f"Could not find schema {id}")
+                return
+        elif otype=="table":
+            table = requests.get(self.host + f"/integration/v2/table/",
+                                 headers=dict(token=self.token),
+                                 params=dict(id=id),
+                                 verify=self.verify)
+            if table.status_code:
+                my_table = table.json()[0]
+                ds_id = my_table.get('ds_id')
+                schema_name = my_table.get('schema_name')
+                table_name = my_table.get('name')
+                return f"{ds_id}.{schema_name}.{table_name}"
+            else:
+                log_me(f"Could not find table {id}")
+                return
+        elif otype=="column" or otype=="attribute":
+            col = requests.get(self.host + f"/integration/v2/column/",
+                                 headers=dict(token=self.token),
+                                 params=dict(id=id),
+                                 verify=self.verify)
+            if col.status_code:
+                my_col = col.json()[0]
+                table_id = my_col.get('table_id')
+                col_name = my_col.get('name')
+                return f"{self.get_fully_qualified_name('table', table_id)}.{col_name}"
+            else:
+                log_me(f"Could not find col {id}")
+                return
+        elif otype=="term" or otype=="glossary_term":
+            art = requests.get(self.host + f"/integration/v2/term/",
+                                 headers=dict(token=self.token),
+                                 params=dict(id=id),
+                                 verify=self.verify)
+            if art.status_code:
+                art_title = art.json()[0].get('title')
+                return art_title
+            else:
+                log_me(f"Could not find term {id}")
+                return
+        elif otype=="article":
+            art = requests.get(self.host + f"/integration/v1/article/{id}/",
+                                 headers=dict(token=self.token),
+                                 verify=self.verify)
+            if art.status_code:
+                art_title = art.json().get('title')
+                return art_title
+            else:
+                log_me(f"Could not find article {id}")
+                return
+        elif otype=="user":
+            user = requests.get(self.host + f"/integration/v1/user/{id}/",
+                                 headers=dict(token=self.token),
+                                 verify=self.verify)
+            if user.status_code:
+                user_display = user.json().get('display_name')
+                user_email = user.json().get('email')
+                return f"{user_display}/({user_email})"
+            else:
+                log_me(f"Could not find user {id}")
+                return
+        elif otype=="groupprofile":
+            group = requests.get(self.host + f"/integration/v1/group/{id}/",
+                                 headers=dict(token=self.token),
+                                 verify=self.verify)
+            if group.status_code:
+                group_display = group.json().get('display_name')
+                # user_email = user.json().get('email')
+                return f"{group_display}"
+            else:
+                log_me(f"Could not find group {id}")
+                return
+        else:
+            log_me(f"Unrecognized otype: {otype}")
+
+
+    def reverse_qualified_name(self, otype, fqn):
+        if otype=="data":
+            return to_int(fqn)
+        elif otype=="schema":
+            parse = re.match(r"([0-9]+)\.([^.]+)(\.[^.]+)?", fqn)
+            ds_id = to_int(parse.group(1))
+            if len(parse.groups())==2:
+                name = parse.group(2)
+            elif len(parse.groups())==3:
+                name = parse.group(2)+parse.group(3)
+            else:
+                log_me(f"Could not parse {otype} {fqn}")
+                return
+            obj = requests.get(self.host + f"/integration/v2/{otype}/",
+                                 headers=dict(token=self.token),
+                                 params=dict(ds_id=ds_id, name=name.lower()),
+                                 verify=self.verify)
+            if obj.status_code and len(obj.json())==1:
+                my_obj = obj.json()[0]
+                return my_obj.get('id')
+            else:
+                log_me(f"Could not find {otype} {fqn}")
+                return
+        elif otype=="table":
+            parse = re.match(r"([0-9]+)\.([^.]+)(\.[^.]+)?\.?([^.]+)", fqn)
+            ds_id = to_int(parse.group(1))
+            if len(parse.groups()) == 3:
+                schema_name = parse.group(2)
+                name = parse.group(3)
+            elif len(parse.groups()) == 4:
+                schema_name = parse.group(2) + parse.group(3)
+                name = parse.group(4)
+            else:
+                log_me(f"Could not parse {otype} {fqn}")
+                return
+            obj = requests.get(self.host + f"/integration/v2/{otype}/",
+                               headers=dict(token=self.token),
+                               params=dict(ds_id=ds_id,
+                                           schema_name=schema_name,
+                                           name=name,
+                                           ),
+                               verify=self.verify)
+            if obj.status_code and len(obj.json())==1:
+                my_obj = obj.json()[0]
+                return my_obj.get('id')
+            else:
+                log_me(f"Could not find {otype} {fqn}")
+                return
+        elif otype=="column" or otype=="attribute":
+            parse = re.match(r"([0-9]+)\.([^.]+)(\.[^.]+)?\.?([^.]+)\.([^.]+)", fqn)
+            ds_id = to_int(parse.group(1))
+            if len(parse.groups()) == 4:
+                schema_name = parse.group(2)
+                schema_id = self.reverse_qualified_name("schema", f"{ds_id}.{schema_name}")
+                table_name = parse.group(3)
+                name = parse.group(4)
+            elif len(parse.groups()) == 5:
+                schema_name = parse.group(2) + parse.group(3)
+                schema_id = self.reverse_qualified_name("schema", f"{ds_id}.{schema_name}")
+                table_name = f"{schema_name.lower()}.{(parse.group(4)).lower()}"
+                name = parse.group(5)
+            else:
+                log_me(f"Could not parse {otype} {fqn}")
+                return
+            obj = requests.get(self.host + f"/integration/v2/column/",
+                               headers=dict(token=self.token),
+                               params=dict(ds_id=ds_id,
+                                           schema_id=schema_id,
+                                           table_name=table_name,
+                                           name=name,
+                                           ),
+                               verify=self.verify)
+            if obj.status_code and len(obj.json())==1:
+                my_obj = obj.json()[0]
+                return my_obj.get('id')
+            else:
+                log_me(f"Could not find {otype} {fqn}")
+                return
+        elif otype=="term" or otype=="glossary_term":
+            my_search = requests.get(self.host + f"/integration/v1/search/",
+                                 headers=dict(token=self.token),
+                                 params=dict(q=fqn,
+                                             filters='{"otypes":["glossary_term"]}'),
+                                 verify=self.verify)
+            if my_search.status_code:
+                my_result = my_search.json()
+                if my_result.get('total')==1:
+                    return my_result['results'][0]['id']
+                log_me(f"Could not find term {fqn}")
+                log_me(f"Search returned: {my_search.content}")
+                return
+        elif otype=="article":
+            art = requests.get(self.host + f"/integration/v1/article/",
+                                 headers=dict(token=self.token),
+                                 params=dict(title__icontains=fqn),
+                                 verify=self.verify)
+            if art.status_code:
+                if len(art.json()):
+                    articles = pd.DataFrame(art.json())
+                    exact_article = articles.loc[articles.title==fqn]
+                    if exact_article.shape[0]==1:
+                        return int(exact_article.at[0, 'id'])
+            log_me(f"Could not find article {fqn}")
+            return
+        elif otype=="user":
+            parse = re.search(f"\(([^)]+)\)", fqn)
+            if parse:
+                user = requests.get(self.host + f"/integration/v1/user/",
+                                     headers=dict(token=self.token),
+                                     params=dict(email=parse.group(1)),
+                                     verify=self.verify)
+                if user.status_code and len(user.json())==1:
+                    return user.json()[0].get('id')
+                else:
+                    log_me(f"Could not find user {fqn}")
+                    return
+        elif otype=="group" or otype=="groupprofile":
+            group = requests.get(self.host + f"/integration/v1/group/",
+                                 headers=dict(token=self.token),
+                                 params=dict(display_name=fqn),
+                                 verify=self.verify)
+            if group.status_code:
+                my_groups = group.json()
+                if len(my_groups)==1:
+                    return my_groups[0].get('id')
+            log_me(f"Could not find group {fqn}")
+            return
+        else:
+            log_me(f"Unrecognized otype: {otype}")
 
