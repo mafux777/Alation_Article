@@ -7,6 +7,7 @@ import config
 import pandas as pd
 from itertools import repeat
 from datetime import datetime, timezone
+import hashlib
 
 def get_bi_source(alation_1, bi_server):
     # Get a list of all BI folders
@@ -30,6 +31,13 @@ def get_bi_source(alation_1, bi_server):
     return export
     # export_new.to_excel("/Users/matthias.funke/Downloads/bento/bi_objects.xlsx", index=False)
 
+h = hashlib.new('sha256')
+
+def my_hash(text):
+    h.update(text.encode())
+    my_hex_str = str(h.hexdigest())
+    return my_hex_str
+
 if __name__ == "__main__":
 
     # --- Log into the source instance
@@ -40,58 +48,51 @@ if __name__ == "__main__":
                                 config.args['user_id'],
                                 )
 
-    # d = alation_1.get_fully_qualified_name("data", 1)
-    # s = alation_1.get_fully_qualified_name("schema", 10)
-    # s1 = alation_1.reverse_qualified_name("schema", "3.SUPERSTORE.PUBLIC")
-    # s2 = alation_1.reverse_qualified_name("schema", "11.big-query-lab-331019.myDataset")
-    # t1 = alation_1.reverse_qualified_name("table", "11.big-query-lab-331019.myDataset.Personnel Nested")
-    # t2 = alation_1.reverse_qualified_name("table", "3.SUPERSTORE.PUBLIC.SUPERSTORE_REPORTING")
-    # a1 = alation_1.reverse_qualified_name("column", "3.SUPERSTORE.PUBLIC.SUPERSTORE_REPORTING.ORDER_DATE")
-    # a2 = alation_1.reverse_qualified_name("column", "11.big-query-lab-331019.myDataset.myTable.word")
-    # a = alation_1.reverse_qualified_name("article", "Norwich International Airport")
-    # t = alation_1.reverse_qualified_name("term", "London Stansted")
-    # u = alation_1.reverse_qualified_name("user", "His Excellency (jon.lanham@alation.com)")
-    # g = alation_1.reverse_qualified_name("group", "Fishermen")
-    # t = alation_1.get_fully_qualified_name("table", 3)
-    # c = alation_1.get_fully_qualified_name("column", 6918)
-    # a = alation_1.get_fully_qualified_name("article", 5)
-    # z = alation_1.get_fully_qualified_name("term", 91538)
-    # u = alation_1.get_fully_qualified_name("user", 4)
-    # g = alation_1.get_fully_qualified_name("groupprofile", 8)
+    # bi_server = alation_1.create_bi_server("http://alation.com", f"V. BI {datetime.now(timezone.utc).isoformat()}")
+    # bi_server_id = bi_server.get("Server IDs")[0]
 
-    export = get_bi_source(alation_1, 132)
-    export.reset_index().to_excel("/Users/matthias.funke/Downloads/bento/bi_server_132.xlsx", index=False)
+    bi_server_id = 136
 
-    df = pd.read_excel("/Users/matthias.funke/Downloads/bento/3_new_cols.xlsx")
+    df = pd.read_excel("/Users/matthias.funke/Downloads/bento/upload test weekdays.xlsx")
     validated = alation_1.validate_headers(df.columns)
 
-    # see if there are any reports missing...
-    # df.loc[(df.otype=="bi_report")&(df.name.isin(export.loc[export.otype=="bi_report", "name"])), :]
+    # create a unique ID for each object
+    bi_folders = alation_1.get_bi_folders(bi_server_id)
+    for i, my_folder in df.loc[df.otype=="bi_folder", :].iterrows():
+        if pd.isna(my_folder['parent']):
+            df.loc[i, "fully_qualified_name"] = f"{bi_server_id}//{my_folder['name']}"
+        else:
+            df.loc[i, "fully_qualified_name"] = f"{my_folder['parent']}//{my_folder['name']}"
+            df.loc[i, "parent_folder"] = df.loc[df.fully_qualified_name==my_folder['parent'], 'external_id'].iloc[0]
+        df.loc[i, "external_id"] = my_hash(df.loc[i, "fully_qualified_name"])
 
-    # mapper = {}
-    # def map_to_uuid(external_id):
-    #     if external_id in mapper:
-    #         return mapper.get(external_id)
-    #     else:
-    #         mapper[external_id] = str(uuid.uuid4())
-    #         return mapper.get(external_id)
+    for j, my_report in df.loc[df.otype=="bi_report", :].iterrows():
+        if pd.isna(my_report['parent']):
+            log_me(f"Report {my_report} does not have parent.")
+        else:
+            parent_name = my_report['parent']
+            parent_object = df.loc[df.fully_qualified_name==parent_name]
+            df.loc[j, "fully_qualified_name"] = (parent_name + "||" + my_report['name'])
+            df.loc[j, "parent_folder"] = parent_object['external_id'].iloc[0]
+        df.loc[j, "external_id"] = my_hash(df.loc[j, "fully_qualified_name"])
 
-    df['external_id'] = df.external_id.apply(lambda x: str(uuid.uuid4()) if pd.isna(x) else x)
+    for k, my_report_col in df.loc[df.otype=="bi_report_column", :].iterrows():
+        if pd.isna(my_report_col['parent']):
+            log_me(f"Report col {my_report_col} does not have parent.")
+        else:
+            parent_name = my_report_col['parent']
+            parent_object = df.loc[df.fully_qualified_name==parent_name]
+            df.loc[k, "fully_qualified_name"] = (parent_name + "||" + my_report_col['name'])
+            df.loc[k, "report"] = parent_object['external_id'].iloc[0]
+        df.loc[k, "external_id"] = my_hash(df.loc[k, "fully_qualified_name"])
+
+    df.to_excel("hashed_ext_ids.xlsx", index=False)
+
     if df.external_id.duplicated().any():
         log_me(f"Cannot proceed with duplicated external IDs. They need to be unique")
         exit(1)
     df['id'] = None
-    # df['external_id'] = df.external_id.apply(map_to_uuid)
-    # df['parent_folder'] = df.parent_folder.apply(lambda f: mapper.get(f))
-    # df['subfolders'] = df.loc[df.otype=='bi_folder', "subfolders"].apply(lambda f: [mapper.get(f0, 'unknown') for f0 in f])
-    # df['parent_reports'] = df.loc[df.otype=='bi_report', "parent_reports"].apply(lambda f: [mapper.get(f0) for f0 in f])
-    # df['report'] = df.loc[df.otype=='bi_report_column', 'report'].apply(lambda f: mapper.get(f, ''))
-    # df.to_excel("/Users/matthias.funke/Downloads/bento/bi_server_115_up.xlsx", index=False)
-    # df.to_excel("/Users/matthias.funke/Downloads/bento/output.xlsx")
-    #
-    bi_server_id = 132
-    # bi_server = alation_1.create_bi_server("http://alation.com", f"V. BI {datetime.now(timezone.utc).isoformat()}")
-    # bi_server_id = bi_server.get("Server IDs")[0]
+
     alation_1.sync_bi(bi_server_id, df)
     pre_validated_df = df.loc[:, list(validated)]
     pre_validated_df['relevant'] = pre_validated_df.apply(lambda x: x.notna().any(), axis=1)

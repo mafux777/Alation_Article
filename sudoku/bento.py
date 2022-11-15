@@ -1887,6 +1887,9 @@ class AlationInstance():
                                   verify=self.verify)
                 if self.check_job_status(r):
                     continue
+                    if otype == "bi_report":
+                        # re-cache all reports
+                        self.get_bi_reports(self.bi_server_id)
                 else:
                     log_me(f"{otype} creation was not successful.")
 
