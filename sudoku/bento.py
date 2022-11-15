@@ -1597,9 +1597,9 @@ class AlationInstance():
             else:
                 log_me(f"{external_id} is not a known folder.")
                 return external_id
-
         except:
             log_me(f"{external_id} is not a known folder.")
+            return external_id
 
     def valid_str(self, my_str):
         if pd.isnull(my_str) or pd.isna(my_str):
@@ -1736,10 +1736,10 @@ class AlationInstance():
             # Create the folders passed as parameters
             my_payload = []
             num_rows = folders.shape[0]
-            if num_rows == 0:
-                # Let's make sure there is no more work to do -- recursively!
-                recursive_folder_work(payload.loc[payload.external_id.isin(still_to_do)])
-                return True
+            # if num_rows == 0:
+            #     # Let's make sure there is no more work to do -- recursively!
+            #     recursive_folder_work(payload.loc[payload.external_id.isin(still_to_do)])
+            #     return True
             log_me(f"Rows to process: {num_rows}")
             done_this_job = []
             for _, f in folders.iterrows():
@@ -1751,8 +1751,12 @@ class AlationInstance():
                     still_to_do.remove(f.external_id)
                     continue
                 if f.external_id in still_to_do:
+                    my_dict = dict(f)
+                    if pd.isnull(f.parent_folder):
+                        log_me(f"Assuming {f.name} is top level")
+                        del my_dict['parent_folder']
                     # see if the parent folder is already there. otherwise, call this
-                    if f.parent_folder and f.parent_folder not in done:
+                    elif f.parent_folder and f.parent_folder not in done:
                         # let's see if have details for the parent folder
                         parent = folders.loc[folders.external_id==f.parent_folder]
                         if parent.shape[0]==1:
@@ -1762,9 +1766,6 @@ class AlationInstance():
                             still_to_do.remove(f.external_id)
                             continue
 
-                    my_dict = dict(f)
-                    if not my_dict['parent_folder']:
-                        del my_dict['parent_folder']
                     my_payload.append(my_dict)
                     done.append(f.external_id)
                     done_this_job.append(f.external_id)
@@ -1827,9 +1828,20 @@ class AlationInstance():
                 recursive_folder_work(children)
             return True
 
+        """
+        Two modes of work:
+        (1) create folders from scratch, starting with top most
+        (2) assume they exist already, process all at once 
+        """
+        start_with = payload.loc[payload.parent_folder.isnull()]
+        if start_with.shape[0]:
+            res = recursive_folder_work(start_with)
+        else:
+            # if there are no folders at root level we can assume folders exist already
+            res = recursive_folder_work(payload)
 
-        # if recursive_folder_work(payload.loc[payload.parent_folder.isnull()]):
-        if recursive_folder_work(payload):
+        if res:
+        # if recursive_folder_work(payload):
             del api_cols[otype]
         else:
             log_me(f"Creation of BI Folders seems to have failed.")
@@ -1837,6 +1849,9 @@ class AlationInstance():
         missing_reports = []
         for otype, payload_cols in api_cols.items():
             payload = df.loc[df.otype==otype, payload_cols].sort_values("created_at")
+            if payload.empty:
+                log_me(f"Nothing to do for {otype}")
+                continue
             for col, op in payload_cols.items():
                 payload[col] = payload[col].apply(op)
             if self.bi_reports is None:

@@ -59,22 +59,22 @@ if __name__ == "__main__":
     # u = alation_1.get_fully_qualified_name("user", 4)
     # g = alation_1.get_fully_qualified_name("groupprofile", 8)
 
-    # export = get_bi_source(alation_1, 115)
-    # export.reset_index().to_excel("/Users/matthias.funke/Downloads/bento/bi_server_115.xlsx", index=False)
+    export = get_bi_source(alation_1, 132)
+    export.reset_index().to_excel("/Users/matthias.funke/Downloads/bento/bi_server_132.xlsx", index=False)
 
-    df = pd.read_excel("/Users/matthias.funke/Downloads/bento/bi_server_115_up.xlsx")
+    df = pd.read_excel("/Users/matthias.funke/Downloads/bento/3_new_cols.xlsx")
     validated = alation_1.validate_headers(df.columns)
 
     # see if there are any reports missing...
     # df.loc[(df.otype=="bi_report")&(df.name.isin(export.loc[export.otype=="bi_report", "name"])), :]
 
-    mapper = {}
-    def map_to_uuid(external_id):
-        if external_id in mapper:
-            return mapper.get(external_id)
-        else:
-            mapper[external_id] = str(uuid.uuid4())
-            return mapper.get(external_id)
+    # mapper = {}
+    # def map_to_uuid(external_id):
+    #     if external_id in mapper:
+    #         return mapper.get(external_id)
+    #     else:
+    #         mapper[external_id] = str(uuid.uuid4())
+    #         return mapper.get(external_id)
 
     df['external_id'] = df.external_id.apply(lambda x: str(uuid.uuid4()) if pd.isna(x) else x)
     if df.external_id.duplicated().any():
@@ -89,7 +89,7 @@ if __name__ == "__main__":
     # df.to_excel("/Users/matthias.funke/Downloads/bento/bi_server_115_up.xlsx", index=False)
     # df.to_excel("/Users/matthias.funke/Downloads/bento/output.xlsx")
     #
-    bi_server_id = 124
+    bi_server_id = 132
     # bi_server = alation_1.create_bi_server("http://alation.com", f"V. BI {datetime.now(timezone.utc).isoformat()}")
     # bi_server_id = bi_server.get("Server IDs")[0]
     alation_1.sync_bi(bi_server_id, df)
