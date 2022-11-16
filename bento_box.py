@@ -36,7 +36,118 @@ h = hashlib.new('sha256')
 def my_hash(text):
     h.update(text.encode())
     my_hex_str = str(h.hexdigest())
-    return my_hex_str
+    return my_hex_str[0:6]
+
+def get_parent(path):
+    components = path.split("//")
+    my_len = len(components)
+    if my_len==1:
+        return
+    else:
+        return "//".join(components[0:my_len-1])
+
+def get_fqn_for_folder(external_id ,bi_folders):
+    parent_folder = bi_folders.loc[bi_folders.external_id==external_id]
+    if parent_folder.shape[0]==1:
+        fqn = parent_folder.fully_qualified_name.iloc[0]
+        return fqn
+
+def get_fqn_for_report(external_id ,bi_reports):
+    parent_report = bi_reports.loc[bi_reports.external_id==external_id]
+    if parent_report.shape[0]==1:
+        fqn = parent_report.fully_qualified_name.iloc[0]
+        return fqn
+
+def make_human_readable(df):
+    """
+    Removes external ID, parent_folder and report
+    Creates fully qualified names based on folder / report / col
+    :param df:
+    :return:
+    """
+    grouped = df.groupby('otype')
+
+    bi_folders = grouped.get_group("bi_folder")
+    bi_folders['fully_qualified_name'] = bi_folders.path
+    bi_folders['parent'] = bi_folders.path.apply(get_parent)
+    bi_folders['otype'] = "bi_folder"
+
+    bi_reports = grouped.get_group("bi_report")
+    bi_reports['parent'] = bi_reports.parent_folder.apply(get_fqn_for_folder, bi_folders=bi_folders)
+    bi_reports['fully_qualified_name'] = bi_reports.apply(lambda report: f"{report.parent}||{report['name']}",
+                                                          axis=1)
+    bi_reports['otype'] = "bi_report"
+
+    bi_report_columns = grouped.get_group("bi_report_column")
+    bi_report_columns['parent'] = bi_report_columns.report.apply(get_fqn_for_report, bi_reports=bi_reports)
+    bi_report_columns['fully_qualified_name'] = bi_report_columns.apply(lambda col: f"{col.parent}||{col['name']}",
+                                                          axis=1)
+    bi_report_columns['otype'] = "bi_report_column"
+
+    df = pd.concat([bi_folders, bi_reports, bi_report_columns])
+    # prove that these are no longer needed
+    df['external_id']=""
+    df['parent_folder']=""
+    df['report']=""
+    return df
+
+def create_df_with_external_ids(df):
+    """
+    Uses the "parent" column to create external IDs by using hash function
+    :param df:
+    :return:
+    """
+    # make sure there is a column called action. Implemented: "delete"
+    if "action" not in df.columns:
+        df["action"]=""
+
+    for i, my_folder in df.loc[df.otype=="bi_folder", :].iterrows():
+        log_me(f"Working on {i}:{my_folder['fully_qualified_name']}")
+        if my_folder.action == "delete":
+            alation_1.delete_bi_object("bi_folder", my_folder.external_id, bi_server_id)
+            continue
+        if pd.isna(my_folder['parent']):
+            df.loc[i, "fully_qualified_name"] = f"{my_folder['name']}"
+        else:
+            df.loc[i, "fully_qualified_name"] = f"{my_folder['parent']}//{my_folder['name']}"
+            df.loc[i, "parent_folder"] = df.loc[df.fully_qualified_name==my_folder['parent'], 'external_id'].iloc[0]
+        df.loc[i, "external_id"] = my_hash(df.loc[i, "fully_qualified_name"])
+
+    for j, my_report in df.loc[df.otype=="bi_report", :].iterrows():
+        if my_report.action == "delete":
+            alation_1.delete_bi_object("bi_report", my_report.external_id, bi_server_id)
+            continue
+        if pd.isna(my_report['parent']):
+            log_me(f"Report {my_report} does not have parent.")
+        else:
+            parent_name = my_report['parent']
+            parent_object = df.loc[df.fully_qualified_name==parent_name]
+            df.loc[j, "fully_qualified_name"] = (parent_name + "||" + my_report['name'])
+            df.loc[j, "parent_folder"] = parent_object['external_id'].iloc[0]
+        df.loc[j, "external_id"] = my_hash(df.loc[j, "fully_qualified_name"])
+
+    for k, my_report_col in df.loc[df.otype=="bi_report_column", :].iterrows():
+        if my_report_col.action == "delete":
+            alation_1.delete_bi_object("bi_report_column", my_report_col.external_id, bi_server_id)
+            continue
+        if pd.isna(my_report_col['parent']):
+            log_me(f"Report col {my_report_col} does not have parent.")
+        else:
+            parent_name = my_report_col['parent']
+            parent_object = df.loc[df.fully_qualified_name==parent_name]
+            df.loc[k, "fully_qualified_name"] = (parent_name + "||" + my_report_col['name'])
+            df.loc[k, "report"] = parent_object['external_id'].iloc[0]
+        df.loc[k, "external_id"] = my_hash(df.loc[k, "fully_qualified_name"])
+
+    log_me(f"Removing {df.loc[df.action=='delete'].shape[0]} deleted objects from data before proceeding...")
+    df = df.loc[df.action!="delete"]
+
+    if df.external_id.duplicated().any():
+        log_me(f"Cannot proceed with duplicated external IDs. They need to be unique")
+        exit(1)
+    df['id'] = None
+    return df
+
 
 if __name__ == "__main__":
 
@@ -48,52 +159,27 @@ if __name__ == "__main__":
                                 config.args['user_id'],
                                 )
 
-    # bi_server = alation_1.create_bi_server("http://alation.com", f"V. BI {datetime.now(timezone.utc).isoformat()}")
-    # bi_server_id = bi_server.get("Server IDs")[0]
 
-    bi_server_id = 136
+    bi_server = alation_1.create_bi_server("http://alation.com", f"V. BI {datetime.now(timezone.utc).isoformat()}")
+    bi_server_id = bi_server.get("Server IDs")[0]
+    # bi_server_id = 1
 
-    df = pd.read_excel("/Users/matthias.funke/Downloads/bento/upload test weekdays.xlsx")
-    validated = alation_1.validate_headers(df.columns)
+    # --- prepare existing download to be more end-user friendly
+    df = get_bi_source(alation_1, 1).reset_index()
+    df = make_human_readable(df)
+    df.to_excel("/Users/matthias.funke/Downloads/bento/human_readable.xlsx", index=False)
+
+
 
     # create a unique ID for each object
-    bi_folders = alation_1.get_bi_folders(bi_server_id)
-    for i, my_folder in df.loc[df.otype=="bi_folder", :].iterrows():
-        if pd.isna(my_folder['parent']):
-            df.loc[i, "fully_qualified_name"] = f"{bi_server_id}//{my_folder['name']}"
-        else:
-            df.loc[i, "fully_qualified_name"] = f"{my_folder['parent']}//{my_folder['name']}"
-            df.loc[i, "parent_folder"] = df.loc[df.fully_qualified_name==my_folder['parent'], 'external_id'].iloc[0]
-        df.loc[i, "external_id"] = my_hash(df.loc[i, "fully_qualified_name"])
+    df = create_df_with_external_ids(df)
+    df.to_excel("/Users/matthias.funke/Downloads/bento/hashed_ext_ids.xlsx", index=False)
 
-    for j, my_report in df.loc[df.otype=="bi_report", :].iterrows():
-        if pd.isna(my_report['parent']):
-            log_me(f"Report {my_report} does not have parent.")
-        else:
-            parent_name = my_report['parent']
-            parent_object = df.loc[df.fully_qualified_name==parent_name]
-            df.loc[j, "fully_qualified_name"] = (parent_name + "||" + my_report['name'])
-            df.loc[j, "parent_folder"] = parent_object['external_id'].iloc[0]
-        df.loc[j, "external_id"] = my_hash(df.loc[j, "fully_qualified_name"])
-
-    for k, my_report_col in df.loc[df.otype=="bi_report_column", :].iterrows():
-        if pd.isna(my_report_col['parent']):
-            log_me(f"Report col {my_report_col} does not have parent.")
-        else:
-            parent_name = my_report_col['parent']
-            parent_object = df.loc[df.fully_qualified_name==parent_name]
-            df.loc[k, "fully_qualified_name"] = (parent_name + "||" + my_report_col['name'])
-            df.loc[k, "report"] = parent_object['external_id'].iloc[0]
-        df.loc[k, "external_id"] = my_hash(df.loc[k, "fully_qualified_name"])
-
-    df.to_excel("hashed_ext_ids.xlsx", index=False)
-
-    if df.external_id.duplicated().any():
-        log_me(f"Cannot proceed with duplicated external IDs. They need to be unique")
-        exit(1)
-    df['id'] = None
-
+    # sync_bi relies on external IDs being correct!
     alation_1.sync_bi(bi_server_id, df)
+
+    # Take care of the logical metadata
+    validated = alation_1.validate_headers(df.columns)
     pre_validated_df = df.loc[:, list(validated)]
     pre_validated_df['relevant'] = pre_validated_df.apply(lambda x: x.notna().any(), axis=1)
 

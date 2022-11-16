@@ -111,6 +111,7 @@ class AlationInstance():
         self.bi_reports = None
         log_me("Getting existing custom fields")
         self.existing_fields = self.get_custom_fields() # store existing custom fields
+        self.endpoint = dict(bi_folder="folder", bi_report="report", bi_report_column="report/column", )
         # log_me("Getting existing templates")
         # self.existing_templates = self.get_templates() # store existing templates
         # log_me("Getting existing data sources")
@@ -1391,6 +1392,7 @@ class AlationInstance():
             next = r.headers.get("x-next-page")
             j = r.json()
             my_folders.extend(j)
+            log_me(f"Downloaded {len(r.json())} items so far.")
         if my_folders:
             folders = pd.DataFrame(my_folders)
             folders['otype'] = "bi_folder"
@@ -1410,6 +1412,7 @@ class AlationInstance():
             r = requests.get(self.host + next, headers=dict(token=self.token), params={}, verify=self.verify)
             next = r.headers.get("x-next-page")
             my_reports.extend(r.json())
+            log_me(f"Downloaded {len(r.json())} items so far.")
         if my_reports:
             reports = pd.DataFrame(my_reports)
             reports['otype'] = "bi_report"
@@ -1424,6 +1427,7 @@ class AlationInstance():
             r = requests.get(self.host + next, headers=dict(token=self.token), params={}, verify=self.verify)
             next = r.headers.get("x-next-page")
             my_cols.extend(r.json())
+            log_me(f"Downloaded {len(r.json())} items so far.")
         if my_cols:
             report_cols = pd.DataFrame(my_cols)
             report_cols['otype'] = "bi_report_column"
@@ -1459,6 +1463,8 @@ class AlationInstance():
             log_me(my_field)
             my_fields.append(my_field)
         custom_field_values = pd.DataFrame(my_fields)
+        if custom_field_values.empty:
+            custom_field_values = pd.DataFrame(columns=['otype', 'id'])
         return custom_field_values.set_index(['otype', 'id'])
 
     def get_field(self, field_id):
@@ -1704,7 +1710,6 @@ class AlationInstance():
                           # "values": list
                           }
         }
-        endpoint = dict(bi_folder="folder", bi_report="report", bi_report_column="report/column", )
         ts_updated = datetime.now(timezone.utc).isoformat()
         df["created_at"] = df.created_at.fillna(ts_updated)
         df["last_updated"] = df.last_updated.fillna(ts_updated)
@@ -1740,19 +1745,22 @@ class AlationInstance():
             #     # Let's make sure there is no more work to do -- recursively!
             #     recursive_folder_work(payload.loc[payload.external_id.isin(still_to_do)])
             #     return True
-            log_me(f"Rows to process: {num_rows}")
+            log_me(f"Folders to process: {num_rows}")
             done_this_job = []
             for _, f in folders.iterrows():
                 if not still_to_do:
                     break
                 if f.external_id in done:
-                    log_me(f"Warning: {f.external_id} was already created!")
-                    done_this_job.append(f.external_id)
-                    still_to_do.remove(f.external_id)
+                    log_me(f"{f.fully_qualified_name} was already created")
+                    if f.external_id not in done_this_job:
+                        done_this_job.append(f.external_id)
+                    if f.external_id in still_to_do:
+                        still_to_do.remove(f.external_id)
+                    # this means no updating of folders
                     continue
                 if f.external_id in still_to_do:
                     my_dict = dict(f)
-                    if pd.isnull(f.parent_folder):
+                    if pd.isnull(f.parent_folder) or f.parent_folder is None:
                         log_me(f"Assuming {f.name} is top level")
                         del my_dict['parent_folder']
                     # see if the parent folder is already there. otherwise, call this
@@ -1769,9 +1777,12 @@ class AlationInstance():
                     my_payload.append(my_dict)
                     done.append(f.external_id)
                     done_this_job.append(f.external_id)
-                    still_to_do.remove(f.external_id)
+                    try:
+                        still_to_do.remove(f.external_id)
+                    except:
+                        log_me(f"Unexpected?")
             if my_payload:
-                r = requests.post(self.host + f"/integration/v2/bi/server/{bi_server_id}/{endpoint[otype]}/",
+                r = requests.post(self.host + f"/integration/v2/bi/server/{bi_server_id}/{self.endpoint[otype]}/",
                                   headers=dict(token=self.token),
                                   json=my_payload,
                                   verify=self.verify)
@@ -1833,7 +1844,7 @@ class AlationInstance():
         (1) create folders from scratch, starting with top most
         (2) assume they exist already, process all at once 
         """
-        start_with = payload.loc[payload.parent_folder.isnull()]
+        start_with = payload.loc[(payload.parent_folder.isnull()) | (payload.parent_folder=='')]
         if start_with.shape[0]:
             res = recursive_folder_work(start_with)
         else:
@@ -1841,7 +1852,6 @@ class AlationInstance():
             res = recursive_folder_work(payload)
 
         if res:
-        # if recursive_folder_work(payload):
             del api_cols[otype]
         else:
             log_me(f"Creation of BI Folders seems to have failed.")
@@ -1856,8 +1866,6 @@ class AlationInstance():
                 payload[col] = payload[col].apply(op)
             if self.bi_reports is None:
                 self.bi_reports = self.get_bi_reports(self.bi_server_id)
-            # for col, op in payload_cols.items():
-            #     payload[col] = payload[col].apply(op)
             my_payload = []
             nrows = payload.shape[0]
             for n, row in payload.reset_index().iterrows():
@@ -1881,17 +1889,13 @@ class AlationInstance():
                 del my_dict['index']
                 my_payload.append(my_dict)
             if my_payload:
-                r = requests.post(self.host + f"/integration/v2/bi/server/{bi_server_id}/{endpoint[otype]}/",
+                r = requests.post(self.host + f"/integration/v2/bi/server/{bi_server_id}/{self.endpoint[otype]}/",
                                   headers=dict(token=self.token),
                                   json=my_payload,
                                   verify=self.verify)
-                if self.check_job_status(r):
-                    continue
-                    if otype == "bi_report":
-                        # re-cache all reports
-                        self.get_bi_reports(self.bi_server_id)
-                else:
-                    log_me(f"{otype} creation was not successful.")
+                if not self.check_job_status(r):
+                    log_me(f"{otype} creation was not successful. Please check inputs.")
+                    break
 
 
     def check_job_status(self, r):
@@ -1924,34 +1928,43 @@ class AlationInstance():
                 log_me(j)
                 break
 
+    def delete_bi_object(self, otype, external_id, bi_server_id):
+        my_id = self.convert_external_id(otype, external_id, bi_server_id)
+        if not my_id:
+            log_me(f"Could not delete {otype}/{external_id}")
+            return
 
+        if otype=="bi_report_column":
+            r = requests.delete(self.host +
+                    f"/integration/v2/bi/server/{bi_server_id}/{self.endpoint[otype]}",
+                             headers=dict(token=self.token),
+                             json=dict(oids=my_id),
+                             verify=self.verify)
+        elif otype in ["bi_folder", "bi_report"]:
+            r = requests.delete(self.host +
+                    f"/integration/v2/bi/server/{bi_server_id}/{self.endpoint[otype]}/{my_id}",
+                             headers=dict(token=self.token),
+                             verify=self.verify)
+        else:
+            log_me(f"Don't know how to delete {otype}")
+            return
+
+        if r.status_code==204:
+            log_me(f"Deleted {otype}/{my_id}")
+        else:
+            log_me(f"Could not delete {otype}/{my_id}")
 
     def convert_external_id(self, otype, external_id, server_id):
         id = self.external_id.get(external_id)
         if id:
             return id
         try:
-            if otype=="bi_folder":
-                r = requests.get(self.host + f"/integration/v2/bi/server/{server_id}/folder/",
-                                 headers=dict(token=self.token),
-                                 params=dict(oids=[external_id],
-                                             keyField="external_id"),
-                                 verify=self.verify)
-            elif otype=="bi_report":
-                r = requests.get(self.host + f"/integration/v2/bi/server/{server_id}/report/",
-                                 headers=dict(token=self.token),
-                                 params=dict(oids=[external_id],
-                                             keyField="external_id"),
-                                 verify=self.verify)
-            elif otype=="bi_report_column":
-                r = requests.get(self.host + f"/integration/v2/bi/server/{server_id}/report/column/",
-                                 headers=dict(token=self.token),
-                                 params=dict(oids=[external_id],
-                                             keyField="external_id"),
-                                 verify=self.verify)
-            else:
-                log_me(f"Don't know how to find {otype} with ID {external_id}")
-                return
+            endpoint = self.endpoint.get(otype)
+            r = requests.get(self.host + f"/integration/v2/bi/server/{server_id}/{endpoint}/",
+                             headers=dict(token=self.token),
+                             params=dict(oids=[external_id],
+                                         keyField="external_id"),
+                             verify=self.verify)
 
             j = r.json()
             if len(j) == 1:
