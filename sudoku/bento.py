@@ -1601,7 +1601,10 @@ class AlationInstance():
                 # log_me(f"Since {external_id} is cached, it exists!")
                 return external_id
             else:
-                log_me(f"{external_id} is not a known folder.")
+                if pd.isna(external_id):
+                    pass
+                else:
+                    log_me(f"{external_id} is not a known folder.")
                 return external_id
         except:
             log_me(f"{external_id} is not a known folder.")
@@ -1670,6 +1673,7 @@ class AlationInstance():
 
     def sync_bi(self, bi_server_id, df):
         self.bi_server_id = bi_server_id
+        self.bi_folders = None
         api_cols = {
             "bi_folder": {"name" : self.valid_str,
                           "external_id" : self.valid_external_id,
@@ -1696,19 +1700,19 @@ class AlationInstance():
                           "parent_folder": self.valid_str,
                           "parent_reports": self.valid_reports,
                           },
-            "bi_report_column": {"name" : self.valid_str,
-                          "external_id" : self.valid_str,
-                          "created_at" : self.valid_str,
-                          "last_updated" : self.valid_str,
-                          "source_url" : self.valid_str,
-                          "bi_object_type" : self.valid_str,
-                          "description_at_source": self.valid_str,
-                          "data_type": self.valid_str,
-                          "role": self.valid_str,
-                          "expression": self.valid_str,
-                          "report": self.valid_str,
-                          # "values": list
-                          }
+            # "bi_report_column": {"name" : self.valid_str,
+            #               "external_id" : self.valid_str,
+            #               "created_at" : self.valid_str,
+            #               "last_updated" : self.valid_str,
+            #               "source_url" : self.valid_str,
+            #               "bi_object_type" : self.valid_str,
+            #               "description_at_source": self.valid_str,
+            #               "data_type": self.valid_str,
+            #               "role": self.valid_str,
+            #               "expression": self.valid_str,
+            #               "report": self.valid_str,
+            #               # "values": list
+            #               }
         }
         ts_updated = datetime.now(timezone.utc).isoformat()
         df["created_at"] = df.created_at.fillna(ts_updated)
@@ -1751,7 +1755,7 @@ class AlationInstance():
                 if not still_to_do:
                     break
                 if f.external_id in done:
-                    log_me(f"{f.fully_qualified_name} was already created")
+                    log_me(f"{f.name} was already created")
                     if f.external_id not in done_this_job:
                         done_this_job.append(f.external_id)
                     if f.external_id in still_to_do:

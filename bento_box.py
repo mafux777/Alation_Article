@@ -1,11 +1,7 @@
-import uuid
-
 from sudoku.bento import AlationInstance
-from sudoku.Article import Article
-from sudoku.alationutil import log_me, extract_files
+from sudoku.alationutil import log_me
 import config
 import pandas as pd
-from itertools import repeat
 from datetime import datetime, timezone
 import hashlib
 
@@ -22,12 +18,12 @@ def get_bi_source(alation_1, bi_server):
     bi_reports_with_cfv = bi_reports.merge(cfv, left_index=True, right_index=True, how="left")
 
     # Get a list of all BI report cols
-    bi_report_cols = alation_1.get_bi_report_cols(bi_server)
-    cfv = alation_1.get_custom_field_values_for_oids(bi_report_cols.index)
-    bi_report_cols_with_cfv = bi_report_cols.merge(cfv, left_index=True, right_index=True, how="left")
+    #bi_report_cols = alation_1.get_bi_report_cols(bi_server)
+    #cfv = alation_1.get_custom_field_values_for_oids(bi_report_cols.index)
+    #bi_report_cols_with_cfv = bi_report_cols.merge(cfv, left_index=True, right_index=True, how="left")
 
-    export = pd.concat([bi_folders_with_cfv, bi_reports_with_cfv, bi_report_cols_with_cfv])
-    # export = pd.concat([bi_folders_with_cfv, bi_reports_with_cfv])
+    # export = pd.concat([bi_folders_with_cfv, bi_reports_with_cfv, bi_report_cols_with_cfv])
+    export = pd.concat([bi_folders_with_cfv, bi_reports_with_cfv])
     return export
     # export_new.to_excel("/Users/matthias.funke/Downloads/bento/bi_objects.xlsx", index=False)
 
@@ -78,13 +74,14 @@ def make_human_readable(df):
                                                           axis=1)
     bi_reports['otype'] = "bi_report"
 
-    bi_report_columns = grouped.get_group("bi_report_column")
-    bi_report_columns['parent'] = bi_report_columns.report.apply(get_fqn_for_report, bi_reports=bi_reports)
-    bi_report_columns['fully_qualified_name'] = bi_report_columns.apply(lambda col: f"{col.parent}||{col['name']}",
-                                                          axis=1)
-    bi_report_columns['otype'] = "bi_report_column"
-
-    df = pd.concat([bi_folders, bi_reports, bi_report_columns])
+    # bi_report_columns = grouped.get_group("bi_report_column")
+    # bi_report_columns['parent'] = bi_report_columns.report.apply(get_fqn_for_report, bi_reports=bi_reports)
+    # bi_report_columns['fully_qualified_name'] = bi_report_columns.apply(lambda col: f"{col.parent}||{col['name']}",
+    #                                                       axis=1)
+    # bi_report_columns['otype'] = "bi_report_column"
+    #
+    # df = pd.concat([bi_folders, bi_reports, bi_report_columns])
+    df = pd.concat([bi_folders, bi_reports])
     # prove that these are no longer needed
     df['external_id']=""
     df['parent_folder']=""
@@ -102,15 +99,19 @@ def create_df_with_external_ids(df):
         df["action"]=""
 
     for i, my_folder in df.loc[df.otype=="bi_folder", :].iterrows():
-        log_me(f"Working on {i}:{my_folder['fully_qualified_name']}")
+        log_me(f"Working on {i}:{my_folder['name']}")
         if my_folder.action == "delete":
             alation_1.delete_bi_object("bi_folder", my_folder.external_id, bi_server_id)
             continue
         if pd.isna(my_folder['parent']):
             df.loc[i, "fully_qualified_name"] = f"{my_folder['name']}"
         else:
-            df.loc[i, "fully_qualified_name"] = f"{my_folder['parent']}//{my_folder['name']}"
-            df.loc[i, "parent_folder"] = df.loc[df.fully_qualified_name==my_folder['parent'], 'external_id'].iloc[0]
+            try:
+                df.loc[i, "fully_qualified_name"] = f"{my_folder['parent']}//{my_folder['name']}"
+                df.loc[i, "parent_folder"] = df.loc[df.fully_qualified_name==my_folder['parent'], 'external_id'].iloc[0]
+            except:
+                log_me(f"Parent for {my_folder['name']} does not seem to exist!")
+                continue
         df.loc[i, "external_id"] = my_hash(df.loc[i, "fully_qualified_name"])
 
     for j, my_report in df.loc[df.otype=="bi_report", :].iterrows():
@@ -162,18 +163,19 @@ if __name__ == "__main__":
 
     bi_server = alation_1.create_bi_server("http://alation.com", f"V. BI {datetime.now(timezone.utc).isoformat()}")
     bi_server_id = bi_server.get("Server IDs")[0]
-    # bi_server_id = 1
+    #bi_server_id = 159
 
     # --- prepare existing download to be more end-user friendly
-    df = get_bi_source(alation_1, 1).reset_index()
+    df = get_bi_source(alation_1, 159).reset_index()
+    df.to_excel("/Users/matthias.funke/Downloads/bento/source_159.xlsx")
     df = make_human_readable(df)
-    df.to_excel("/Users/matthias.funke/Downloads/bento/human_readable.xlsx", index=False)
+    df.to_excel("/Users/matthias.funke/Downloads/bento/human_readable_159.xlsx", index=False)
 
 
-
+    # df = pd.read_excel("/Users/matthias.funke/Downloads/bento/hashed_ext_ids.xlsx")
     # create a unique ID for each object
     df = create_df_with_external_ids(df)
-    df.to_excel("/Users/matthias.funke/Downloads/bento/hashed_ext_ids.xlsx", index=False)
+    df.to_excel("/Users/matthias.funke/Downloads/bento/hashed_ext_ids_159.xlsx", index=False)
 
     # sync_bi relies on external IDs being correct!
     alation_1.sync_bi(bi_server_id, df)
@@ -186,7 +188,7 @@ if __name__ == "__main__":
     validated_df = df.loc[pre_validated_df.relevant, ['otype', 'id', 'external_id'] + list(validated)].sort_index()
     alation_1.upload_lms(validated_df, validated, bi_server_id)
 
-    print("All done.")
+    print(f"Check out {alation_1.host}/bi/v2/server/{bi_server_id}/")
 
 
 
