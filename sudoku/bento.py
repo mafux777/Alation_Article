@@ -17,53 +17,6 @@ import re
 
 
 
-class Folder():
-    # The registry is a dictionary of folders
-    # key: external_id
-    # value: the Folder object, which contains name and parent Folder
-    # ...and gets enriched later by the internal ID
-    registry = {}
-    def __init__(self, name, parent=None):
-        name = name.strip()
-        self.name = name # this is the short name
-        self.parent = parent # this is the long name of the parent
-
-        reg = f'{self}' # this is a long name, taking advantage of recursion, calling __repr__
-        # The external ID includes BI Server ID and a random component, too
-        # that will be the key to the registry
-        external_id = reg.__hash__()
-        if external_id not in Folder.registry:
-            # ---- create BI folder -----------
-            # bif = [create_folder_object(name, external_id, parent_folder=parent)]
-            # api = f'{bi_server_url}{bi_server}/folder/'
-            # if parent:
-            #     print(f'Creating "{parent}/{name}"')
-            # else:
-            #     print(f'Creating "{name}"')
-            # r = alation.generic_api_post(api, body=bif)
-            # if 'status' in r:
-            #     if r['status'] == 'successful':
-            #         log_me(f'{external_id}:{r["result"]}')
-            # ---- keep track of what was created ----
-            Folder.registry[external_id] = self
-    def __repr__(self):
-        if self.parent:
-            return f'{self.parent}/{self.name}'
-        else:
-            return self.name
-
-    @classmethod
-    def get_or_create_from_path(cls, path, parent=None, split_char='/'):
-        path_items = path.split(split_char)
-        n = len(path_items)
-        if n == 1:
-            return Folder(path_items[0], parent)
-        # reduce phase... make first item parent
-        p = cls.get_or_create_from_path(path_items[0], parent=parent)
-        # call recursively, but with one less item on the path
-        q = cls.get_or_create_from_path(path='/'.join(path_items[1:]), parent=p)
-        return q
-
 
 # Safe method for converting a number in str or float format to int
 def to_int(n):
@@ -109,6 +62,7 @@ class AlationInstance():
         self.external_id = {}
         self.bi_folders = None
         self.bi_reports = None
+        self.fqn_cache = {}
         log_me("Getting existing custom fields")
         self.existing_fields = self.get_custom_fields() # store existing custom fields
         self.endpoint = dict(bi_folder="folder", bi_report="report", bi_report_column="report/column", )
@@ -1476,7 +1430,7 @@ class AlationInstance():
         for my_header in set(headers) - set(self.api_columns):
             if ":" in my_header:
                 components = my_header.split(":")
-                field_name = components[0]
+                field_name = components[0].lower()
                 field_type = components[1]
             else:
                 field_name = my_header
@@ -1502,9 +1456,11 @@ class AlationInstance():
                     continue
             else:
                 my_id = str(my_object.id)
-
-            log_me(f"Tagging {self.host}/bi/v2/{my_object.otype[3:]}/{to_int(my_id)} with external ID: {my_object.external_id}")
-            tag = self.tag_an_object(my_object.otype, my_id, my_object.external_id)
+            try:
+                log_me(f"Tagging {self.host}/bi/v2/{my_object.otype[3:]}/{to_int(my_id)} with external ID: {my_object.external_id}")
+                tag = self.tag_an_object(my_object.otype, my_id, my_object.external_id)
+            except:
+                pass
             pre_existing_values = defaultdict(list)
             for k, v in fields.items():
                 if pd.isnull(my_object[k]):
@@ -2072,6 +2028,8 @@ class AlationInstance():
 
 
     def reverse_qualified_name(self, otype, fqn):
+        if fqn in self.fqn_cache:
+            return self.fqn_cache.get(fqn)
         if otype=="data":
             return to_int(fqn)
         elif otype=="schema":
@@ -2090,22 +2048,37 @@ class AlationInstance():
                                  verify=self.verify)
             if obj.status_code and len(obj.json())==1:
                 my_obj = obj.json()[0]
+                self.fqn_cache[fqn] = my_obj.get('id')
                 return my_obj.get('id')
             else:
                 log_me(f"Could not find {otype} {fqn}")
                 return
         elif otype=="table":
-            parse = re.match(r"([0-9]+)\.([^.]+)(\.[^.]+)?\.?([^.]+)", fqn)
-            ds_id = to_int(parse.group(1))
-            if len(parse.groups()) == 3:
-                schema_name = parse.group(2)
-                name = parse.group(3)
-            elif len(parse.groups()) == 4:
-                schema_name = parse.group(2) + parse.group(3)
-                name = parse.group(4)
+            # parse = re.match(r"([0-9]+)\.([^.]+)(\.[^.]+)?\.?([^.]+)", fqn)
+            # ds_id = to_int(parse.group(1))
+            # if len(parse.groups()) == 3:
+            #     schema_name = parse.group(2)
+            #     name = parse.group(3)
+            # elif len(parse.groups()) == 4:
+            #     schema_name = parse.group(2) + parse.group(3)
+            #     name = parse.group(4)
+            # else:
+            #     log_me(f"Could not parse {otype} {fqn}")
+            #     return
+            components = fqn.split(".")
+            if len(components)==3:
+                ds_id = to_int(components[0])
+                schema_name = components[1]
+                name = components[2]
+            elif len(components)==4:
+                ds_id = to_int(components[0])
+                schema_name = f"{components[1]}.{components[2]}"
+                name = components[3]
             else:
                 log_me(f"Could not parse {otype} {fqn}")
                 return
+
+
             obj = requests.get(self.host + f"/integration/v2/{otype}/",
                                headers=dict(token=self.token),
                                params=dict(ds_id=ds_id,
@@ -2115,6 +2088,7 @@ class AlationInstance():
                                verify=self.verify)
             if obj.status_code and len(obj.json())==1:
                 my_obj = obj.json()[0]
+                self.fqn_cache[fqn] = my_obj.get('id')
                 return my_obj.get('id')
             else:
                 log_me(f"Could not find {otype} {fqn}")
@@ -2145,6 +2119,7 @@ class AlationInstance():
                                verify=self.verify)
             if obj.status_code and len(obj.json())==1:
                 my_obj = obj.json()[0]
+                self.fqn_cache[fqn] = my_obj.get('id')
                 return my_obj.get('id')
             else:
                 log_me(f"Could not find {otype} {fqn}")
@@ -2200,4 +2175,38 @@ class AlationInstance():
             return
         else:
             log_me(f"Unrecognized otype: {otype}")
+
+
+    def post_data_health(self, payload):
+        r = requests.post(self.host + "/integration/v1/data_quality/",
+                          headers=dict(token=self.token),
+                          json=payload)
+        r2 = self.check_job_status(r)
+        return
+
+    def create_new_policy(self, template_id=None, policy_group_id=None):
+        payload = dict(otype="business_policy",
+                       owner_id=self.user_id)
+        r = requests.post(self.host + "/api/policy/",
+                          headers=dict(token=self.token),
+                          json=payload)
+        j = r.json()
+        id = j.get('id')
+        if id and template_id:
+            r = requests.post(self.host + f"/api/v1/template/object/business_policy/{id}/",
+                              headers=dict(token=self.token),
+                              json=dict(op="replace",
+                                        template_ids=[template_id]))
+            if not r.status_code:
+                print(f"Problem assigning template ID {template_id}")
+
+        if id and policy_group_id:
+            r = requests.post(self.host + f"/api/policy_group/{policy_group_id}/links/",
+                              headers=dict(token=self.token),
+                              json=dict(otype="business_policy",
+                                        oid=str(id)))
+            if not r.status_code:
+                print(f"Problem assigning to group ID {template_id}")
+
+        return id
 
