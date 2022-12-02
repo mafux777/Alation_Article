@@ -24,25 +24,25 @@ if __name__ == "__main__":
     df = alation_1.get_dataflows()
     tables = []
     for i, my_dataflow in df.iterrows():
-        p=my_dataflow['path']
-        log_me(p)
-        for input in p[0]:
-            if input['otype']=='table' and not input.get('is_temp'):
-                tables.append(dict(key=input['key'],
-                                   table_url=alation_1.reverse_qualified_name('table', input['key']),
-                                   dataflow_key=p[1][0]['key'],
-                                   dataflow_url=my_dataflow['full_url'],
-                                   dataflow_title=my_dataflow['title'],
-                                   ))
-        for output in p[2]:
-            if output['otype']=='table' and not output.get('is_temp'):
-                tables.append(dict(key=output['key'],
-                                   table_url=alation_1.reverse_qualified_name('table', output['key']),
-                                   dataflow_key=p[1][0]['key'],
-                                   dataflow_url=my_dataflow['full_url'],
-                                   dataflow_title=my_dataflow['title'],
-                                   ))
+        for p in my_dataflow['paths']:
+            log_me(p)
+            for input in p[0]:
+                if input['otype']=='table' and not input.get('is_temp'):
+                    tables.append(dict(key=input['key'],
+                                       table_url=f"/table/{alation_1.reverse_qualified_name('table', input['key'])}/",
+                                       dataflow_key=p[1][0]['key'],
+                                       dataflow_url=my_dataflow['full_url'],
+                                       dataflow_title=my_dataflow['title'],
+                                       ))
+            for output in p[2]:
+                if output['otype']=='table' and not output.get('is_temp'):
+                    tables.append(dict(key=output['key'],
+                                       table_url=f"/table/{alation_1.reverse_qualified_name('table', output['key'])}/",
+                                       dataflow_key=p[1][0]['key'],
+                                       dataflow_url=my_dataflow['full_url'],
+                                       dataflow_title=my_dataflow['title'],
+                                       ))
 
     tables_df = pd.DataFrame(tables)
-    print()
+    tables_df.to_excel("./my_tables_with_lineage.xlsx")
 

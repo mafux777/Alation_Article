@@ -1382,8 +1382,8 @@ class AlationInstance():
                                  params=dict(otype="dataflow", oid=id, keyField="id"),
                                  verify=self.verify)
                 j = r.json()
-                return j.get('paths')[0]
-            dataflows['path'] = dataflows.id.apply(get_dataflow_details)
+                return j.get('paths')
+            dataflows['paths'] = dataflows.id.apply(get_dataflow_details)
             return dataflows
 
 
@@ -2111,10 +2111,22 @@ class AlationInstance():
             obj = requests.get(self.host + f"/integration/v2/{otype}/",
                                headers=dict(token=self.token),
                                params=dict(ds_id=ds_id,
-                                           schema_name=schema_name,
-                                           name=name,
+                                           schema_name__iexact=schema_name,
+                                           name__iexact=name,
                                            ),
                                verify=self.verify)
+            # if obj.status_code and len(obj.json())>=1:
+            #     tables_found = pd.DataFrame(obj.json())
+            #     tables_found['schema_lower'] = tables_found.schema.apply(str.lower)
+            #     iexact = tables_found.loc[tables_found.schema_lower==schema_name.lower()]
+            #     if iexact.shape[0]==1:
+            #         my_id = iexact.iloc[0]['id']
+            #         self.fqn_cache[fqn] = my_id
+            #         return my_id
+            #     else:
+            #         log_me(f"Could not find {otype} {fqn}")
+            #         return
+            #
             if obj.status_code and len(obj.json())==1:
                 my_obj = obj.json()[0]
                 self.fqn_cache[fqn] = my_obj.get('id')
