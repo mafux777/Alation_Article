@@ -66,8 +66,8 @@ class AlationInstance():
         log_me("Getting existing custom fields")
         self.existing_fields = self.get_custom_fields() # store existing custom fields
         self.endpoint = dict(bi_folder="folder", bi_report="report", bi_report_column="report/column", )
-        # log_me("Getting existing templates")
-        # self.existing_templates = self.get_templates() # store existing templates
+        log_me("Getting existing templates")
+        self.existing_templates = self.get_templates() # store existing templates
         # log_me("Getting existing data sources")
         # self.ds = self.getDataSources()
         # self.articles = pd.DataFrame() # cache for Articles
@@ -1239,21 +1239,21 @@ class AlationInstance():
     # Note this is pretty crude approach, taking about 1/2 second per DataFlow
     # Result is a DataFrame with the following columns:
     # ['id', 'content', 'creation_type', 'external_id', 'data_input', 'data_output', 'fp', 'otype', 'url']
-    def get_dataflows(self):
-        res = []
-        log_me("Getting DataFlows")
-        for i in range(1, 1000):
-            d = self.generic_api_get(api=f"/api/dataflow/{i}/")
-            if not 'id' in d:
-                break
-            if i == 1:
-                log_me(f"Available fields: {d.keys()}")
-            res.append(d)
-        res_pd = pd.DataFrame(res)
-        res_pd.index = res_pd.id
-        log_me(f"Downloaded {i-1} DataFlows")
-
-        return res_pd
+    # def get_dataflows(self):
+    #     res = []
+    #     log_me("Getting DataFlows")
+    #     for i in range(1, 1000):
+    #         d = self.generic_api_get(api=f"/api/dataflow/{i}/")
+    #         if not 'id' in d:
+    #             break
+    #         if i == 1:
+    #             log_me(f"Available fields: {d.keys()}")
+    #         res.append(d)
+    #     res_pd = pd.DataFrame(res)
+    #     res_pd.index = res_pd.id
+    #     log_me(f"Downloaded {i-1} DataFlows")
+    #
+    #     return res_pd
     # The generic_api_post method posts a request to Alation and if necessary checks the status
     def generic_api_post(self, api, params=None, body=None, data=None, official=False):
         if official:
@@ -1357,6 +1357,35 @@ class AlationInstance():
             # cache the results for later use
             self.bi_folders = folders.set_index(['otype', 'id'], drop=True)
             return self.bi_folders
+
+    def get_dataflows(self):
+        my_dataflows = []
+        batch = 1000
+        offset = 0
+        while(True):
+            my_search = dict(limit=batch,
+                             offset=offset,
+                             filters=json.dumps(dict(otypes=['dataflow'])))
+            r = requests.get(self.host + "/search/v1/", headers=dict(token=self.token), params=my_search, verify=self.verify)
+            j = r.json()
+            total = j.get('total')
+            my_dataflows.extend(j.get('results'))
+            log_me(f"Downloaded {batch}/{total} items.")
+            if total<offset:
+                break
+            else:
+                offset += batch
+        if my_dataflows:
+            dataflows = pd.DataFrame(my_dataflows)
+            def get_dataflow_details(id):
+                r = requests.get(self.host + "/integration/v2/lineage/", headers=dict(token=self.token),
+                                 params=dict(otype="dataflow", oid=id, keyField="id"),
+                                 verify=self.verify)
+                j = r.json()
+                return j.get('paths')[0]
+            dataflows['path'] = dataflows.id.apply(get_dataflow_details)
+            return dataflows
+
 
     def get_bi_reports(self, bi_server_id):
         my_reports = []
@@ -2209,4 +2238,55 @@ class AlationInstance():
                 print(f"Problem assigning to group ID {template_id}")
 
         return id
+
+    def find_article_by_title(self, title, template_id):
+        r = requests.get(self.host + "/integration/v1/article/",
+                          headers=dict(token=self.token),
+                          params=dict(title=title,
+                                      custom_field_templates=f"[{template_id}]"))
+        j = r.json()
+        if len(j)==1:
+            id = j[0].get('id')
+            return id
+        else:
+            log_me(f"Needed exactly one result, but got: {j}")
+
+    def modify_single_field_on_article(self, article_id, template_id, field_name, value):
+        # check the old value
+        my_art = requests.get(self.host + f"/integration/v1/article/{article_id}/",
+                          headers=dict(token=self.token))
+        if not my_art:
+            log_me(f"Article with ID {article_id} does not seem to exist.")
+            return
+
+        my_custom_fields = my_art.json().get("custom_fields")
+        if my_custom_fields:
+            my_custom_fields_df = pd.DataFrame(my_custom_fields).set_index('field_name')
+            old_value = my_custom_fields_df.at[field_name, 'value']
+
+        # validate the template first
+        template_name = self.existing_templates.at[template_id, 'title']
+        if not template_name:
+            log_me(f"No template found for ID {template_id}")
+            return
+        url_encoded = urllib.parse.quote(template_name)
+
+        # validate field_name
+        field = self.existing_fields.loc[self.existing_fields.name_singular==field_name]
+        if field.empty:
+            log_me(f"No field found for name {field_name}")
+            return
+
+        payload = dict(article_id=str(article_id))
+        payload[field_name] = value
+
+        r = requests.post(self.host + f"/api/v2/bulk_metadata/custom_fields/{url_encoded}/article",
+                          headers=dict(token=self.token),
+                          params=dict(create_new=False, replace_values=True),
+                          json=payload)
+        if not r.status_code:
+            log_me(f"Could not update custom field {field_name}")
+        else:
+            log_me(r.json())
+
 
