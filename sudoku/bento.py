@@ -1360,29 +1360,40 @@ class AlationInstance():
 
     def get_dataflows(self):
         my_dataflows = []
-        batch = 1000
+        batch = 5000
         offset = 0
         while(True):
             my_search = dict(limit=batch,
                              offset=offset,
+                             calculate_facets=True,
                              filters=json.dumps(dict(otypes=['dataflow'])))
             r = requests.get(self.host + "/search/v1/", headers=dict(token=self.token), params=my_search, verify=self.verify)
             j = r.json()
             total = j.get('total')
-            my_dataflows.extend(j.get('results'))
-            log_me(f"Downloaded {batch}/{total} items.")
-            if total<offset:
-                break
+            results = j.get('results')
+            if results:
+                my_dataflows.extend(results)
+                log_me(f"Downloaded {batch}/{total} items.")
+                if total<offset:
+                    break
+                else:
+                    offset += batch
             else:
-                offset += batch
+                break
         if my_dataflows:
             dataflows = pd.DataFrame(my_dataflows)
+            log_me(f"Dataflows in total: {dataflows.shape[0]}")
             def get_dataflow_details(id):
                 r = requests.get(self.host + "/integration/v2/lineage/", headers=dict(token=self.token),
                                  params=dict(otype="dataflow", oid=id, keyField="id"),
                                  verify=self.verify)
                 j = r.json()
-                return j.get('paths')
+                p = j.get('paths')
+                if p:
+                    log_me(f"Dataflow {id} {j.get('title')}")
+                else:
+                    log_me(f"Dataflow {id} is empty")
+                return p
             dataflows['paths'] = dataflows.id.apply(get_dataflow_details)
             return dataflows
 
