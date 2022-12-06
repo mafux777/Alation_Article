@@ -1,11 +1,10 @@
 # -*- coding: utf-8 -*-
 import pandas as pd
 
-from AlationInstance import AlationInstance
+from sudoku.bento import AlationInstance
 import json
 
-api_json = """
-{
+api_json = {
   "path": [
     "New Flightaware APIs",
     "Weather",
@@ -53,6 +52,7 @@ api_json = """
                 "cloud_altitude": {
                   "title" : "Cloud Altitude",
                   "description" : "Cloud altitude in feet above ground",
+                  "Airport Continent" : "AS",
                   "type": "integer",
                   "examples": [
                     "1400"
@@ -165,7 +165,8 @@ api_json = """
           },
           "next_offset": {
             "title" : "Next offset",
-            "description" : "Technical offset for Flightaware API",
+            "description" : "Technical offset for Flightaware API (2)",
+            "My Rich Text" : "Amazing work",
             "type": "integer",
             "examples": [
               "1"
@@ -176,17 +177,22 @@ api_json = """
     }
   }
 }
-"""
 
 
 
 
+import config
 
 if __name__ == "__main__":
     # -- API Resources
 
-    alation_1 = AlationInstance('http://r6-sandbox.alationproserv.com/', 'matthias.funke@alation.com','9kBYH;i7cQ;C')
+    alation_1 = AlationInstance(config.args['host'],
+                                config.args['username'], # not needed
+                                config.args['password'], # not needed
+                                config.args['refresh_token'],
+                                config.args['user_id'],
+                                )
 
-    r = alation_1.post_api_resource(json.loads(api_json))
+    r = alation_1.post_api_resource(api_json)
     print (r)
 

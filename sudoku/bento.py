@@ -1139,10 +1139,13 @@ class AlationInstance():
         for id, obj in resource_field.iterrows():
             r = dict(obj)
             t = {}
-            if self.is_valid(r['title']):
-                t['title'] = r['title']
-            if self.is_valid(r['description']):
-                t['description'] = r['description']
+            for my_field in set(resource_field.columns) - {'type', 'examples', 'key', 'id'}:
+                if self.is_valid(r[my_field]):
+                    t[my_field] = r[my_field]
+            # if self.is_valid(r['title']):
+            #     t['title'] = r['title']
+            # if self.is_valid(r['description']):
+            #     t['description'] = r['description']
             t['key'] = str(r['id'])
             if len(t.keys()) > 1:
                 body = body + json.dumps(t) + '\n'
