@@ -4,6 +4,7 @@ import pandas as pd
 import json
 from bs4 import BeautifulSoup
 import urllib
+from urllib.parse import quote
 
 from sudoku.alationutil import log_me, list_files, extract_files
 import errno
@@ -1304,6 +1305,16 @@ class AlationInstance():
         r = requests.put(self.host + api, json=body, params=params, headers=headers_final, verify=self.verify)
         return r.content
 
+    def generic_api_patch(self, api, params=None, body=None, official=False):
+        if official:
+            headers_final = dict(token=self.token)
+        else:
+            headers_final = self.headers
+            headers_final['Referer'] = self.host + api
+
+        r = requests.patch(self.host + api, json=body, params=params, headers=headers_final, verify=self.verify)
+        return r.content
+
     # The generic_api_get implements a REST get, with API token if official or Cookie if not.
     # If the callers sends header, it needs to contain API or cookie
     def generic_api_get(self, api, headers=None, params=None, official=False):
@@ -1491,17 +1502,21 @@ class AlationInstance():
         for _, my_object in validated_df.iterrows():
 
             if pd.isnull(my_object.id):
-                my_id = str(self.convert_external_id(my_object.otype,
+                my_id = self.convert_external_id(my_object.otype,
                                                  my_object.external_id,
-                                                 server_id))
+                                                 server_id)
                 if not my_id:
                     log_me(f"Skipping {my_object.external_id}")
                     continue
+                else:
+                    my_id = str(my_id)
             else:
                 my_id = str(my_object.id)
             try:
-                log_me(f"Tagging {self.host}/bi/v2/{my_object.otype[3:]}/{to_int(my_id)} with external ID: {my_object.external_id}")
-                tag = self.tag_an_object(my_object.otype, my_id, my_object.external_id)
+                my_tags = my_object.tags.split(";")
+                for my_tag in my_tags:
+                    log_me(f"Tagging {self.host}/bi/v2/{my_object.otype[3:]}/{to_int(my_id)} with: {my_tag}")
+                    tag = self.tag_an_object(my_object.otype, my_id, my_tag)
             except:
                 pass
             pre_existing_values = defaultdict(list)
@@ -1661,7 +1676,7 @@ class AlationInstance():
             return "simple"
 
     def tag_an_object(self, otype, oid, tag):
-        api=f"/integration/tag/{tag}/subject/"
+        api=f"/integration/tag/{quote(tag)}/subject/"
 
         r = requests.post(self.host + api,
                           headers=dict(token=self.token),

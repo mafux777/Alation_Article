@@ -4,6 +4,7 @@ import config
 import pandas as pd
 from datetime import datetime, timezone
 import hashlib
+import json
 
 def get_bi_source(alation_1, bi_server):
     # Get a list of all BI folders
@@ -160,32 +161,63 @@ if __name__ == "__main__":
                                 config.args['user_id'],
                                 )
 
+    # gets the tags associated with this BI server
+    bi_server_id = 1
 
-    bi_server = alation_1.create_bi_server("http://alation.com", f"V. BI {datetime.now(timezone.utc).isoformat()}")
-    bi_server_id = bi_server.get("Server IDs")[0]
-    #bi_server_id = 159
+    log_me(f"Searching for tags on BI Server {bi_server_id}")
+    my_search = dict(
+        q = "",
+        offset=0,
+        limit=10000,
+        row_num=0,
+        compute_facets='true',
+        show_spelling_suggestions='true',
+        filters=json.dumps(dict(
+            otypes=["report_collection","bi_folder","bi_report","report_object"],
+        ))
+    )
+    search = alation_1.generic_api_get(f"/search/v1", params=my_search)
+    my_tags = pd.DataFrame(search['facets']['standard']['tags'])
+    my_search['filters'] = json.dumps(dict(
+            otypes=["report_collection","bi_folder","bi_report","report_object"]))
+    my_search['fields'] = json.dumps(dict(
+            tag_ids=list(my_tags.facet_val.iloc[0:40])))
+    search = alation_1.generic_api_get(f"/search/v1", params=my_search)
+    objs_with_tag = pd.DataFrame(search['results'])
+    objs_with_tag['id'] = objs_with_tag.id.apply(int)
+    objs_with_tag = objs_with_tag.set_index(['otype', 'id'], drop=False)
+    objs_with_tag = objs_with_tag.loc[(objs_with_tag.bi_server_id==str(bi_server_id)) &
+                                      (objs_with_tag.tags.notnull()), ['tags']
+    ]
+    objs_with_tag['tags'] = objs_with_tag['tags'].apply(lambda t: ";".join(t))
+
+    #bi_server = alation_1.create_bi_server("http://alation.com", f"V. BI {datetime.now(timezone.utc).isoformat()}")
+    #bi_server_id = bi_server.get("Server IDs")[0]
 
     # --- prepare existing download to be more end-user friendly
-    df = get_bi_source(alation_1, 159).reset_index()
-    df.to_excel("/Users/matthias.funke/Downloads/bento/source_159.xlsx")
-    df = make_human_readable(df)
-    df.to_excel("/Users/matthias.funke/Downloads/bento/human_readable_159.xlsx", index=False)
+    df = get_bi_source(alation_1, bi_server_id)
+    df = df.merge(objs_with_tag, left_index=True, right_index=True, how='left').reset_index()
+    # df.to_excel("bento/source_1.xlsx")
+    #df = make_human_readable(df)
+    #df.to_excel("/Users/matthias.funke/Downloads/bento/human_readable_159.xlsx", index=False)
 
 
-    # df = pd.read_excel("/Users/matthias.funke/Downloads/bento/hashed_ext_ids.xlsx")
+    #df = pd.read_excel("/Users/matthias.funke/Downloads/bento/bi_objects.xlsx")
     # create a unique ID for each object
-    df = create_df_with_external_ids(df)
-    df.to_excel("/Users/matthias.funke/Downloads/bento/hashed_ext_ids_159.xlsx", index=False)
+    #df = create_df_with_external_ids(df)
+    #df.to_excel("/Users/matthias.funke/Downloads/bento/bi_objects_with_new_IDs.xlsx", index=False)
 
     # sync_bi relies on external IDs being correct!
-    alation_1.sync_bi(bi_server_id, df)
+    #alation_1.sync_bi(bi_server_id, df)
 
     # Take care of the logical metadata
     validated = alation_1.validate_headers(df.columns)
-    pre_validated_df = df.loc[:, list(validated)]
+    pre_validated_df = df.loc[:, list(validated)+['tags']]
     pre_validated_df['relevant'] = pre_validated_df.apply(lambda x: x.notna().any(), axis=1)
 
-    validated_df = df.loc[pre_validated_df.relevant, ['otype', 'id', 'external_id'] + list(validated)].sort_index()
+    final_cols = ['otype', 'id', 'external_id', 'tags'] + list(validated)
+
+    validated_df = df.loc[pre_validated_df.relevant, final_cols].sort_index()
     alation_1.upload_lms(validated_df, validated, bi_server_id)
 
     print(f"Check out {alation_1.host}/bi/v2/server/{bi_server_id}/")
