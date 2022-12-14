@@ -2085,6 +2085,48 @@ class AlationInstance():
             log_me(f"Unrecognized otype: {otype}")
 
 
+    def look_up_ext_id(self, row, bi_server_id):
+        otype = row.get("otype")
+        id = row.get("id")
+        try:
+            endpoint = self.endpoint.get(otype)
+            r = requests.get(self.host + f"/integration/v2/bi/server/{bi_server_id}/{endpoint}/",
+                             headers=dict(token=self.token),
+                             params=dict(oids=[id],
+                                         keyField="id"),
+                             verify=self.verify)
+
+            j = r.json()
+            if len(j) == 1:
+                return j[0]['external_id']
+            else:
+                log_me(f"Could not find {otype} with ID {id}")
+                return
+        except Exception as e:
+            log_me(f"EXCEPTION ({e}): Could not find {otype} with ID {id}")
+            return
+
+    def look_up_new_id(self, row, bi_server_id):
+        otype = row.get("otype")
+        id = row.get("external_id")
+        try:
+            endpoint = self.endpoint.get(otype)
+            r = requests.get(self.host + f"/integration/v2/bi/server/{bi_server_id}/{endpoint}/",
+                             headers=dict(token=self.token),
+                             params=dict(oids=[id],
+                                         keyField="external_id"),
+                             verify=self.verify)
+
+            j = r.json()
+            if len(j) == 1:
+                return int(j[0]['id'])
+            else:
+                log_me(f"Could not find {otype} with ID {id}")
+                return
+        except Exception as e:
+            log_me(f"EXCEPTION ({e}): Could not find {otype} with ID {id}")
+            return
+
     def reverse_qualified_name(self, otype, fqn):
         if fqn in self.fqn_cache:
             return self.fqn_cache.get(fqn)

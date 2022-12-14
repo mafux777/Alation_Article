@@ -162,56 +162,27 @@ if __name__ == "__main__":
                                 config.args['user_id'],
                                 )
 
-    # gets the tags associated with this BI server
-    bi_server_id = 1
+    # old server and new server
+    bi_server_id = 5
+    bi_server_new = 7
 
-    log_me(f"Searching for tags on BI Server {bi_server_id}")
-    my_search = dict(
-        q = "",
-        offset=0,
-        limit=2500,
-        row_num=0,
-        compute_facets='true',
-        show_spelling_suggestions='true',
-        filters=json.dumps(dict(
-            otypes=["report_collection","bi_folder","bi_report","report_object"],
-        ))
-    )
-    search = alation_1.generic_api_get(f"/search/v1", params=my_search)
-    my_tags = pd.DataFrame(search['facets']['standard']['tags'])
-    # my_search['filters'] = json.dumps(dict(
-    #         otypes=["report_collection","bi_folder","bi_report","report_object"]))
-    # my_search['fields'] = json.dumps(dict(
-    #         tag_ids=list(my_tags.facet_val.iloc[0:40])))
-    # search = alation_1.generic_api_get(f"/search/v1", params=my_search)
-    objs_with_tag = pd.DataFrame(search['results'])
-    objs_with_tag['id'] = objs_with_tag.id.apply(int)
-    objs_with_tag = objs_with_tag.set_index(['otype', 'id'], drop=False)
-
-    tag_frames = []
-    for my_tag in my_tags['name']:
-        q = quote(my_tag)
-        api = f"/integration/tag/{q}/subject/"
-        tagged_subjects = pd.json_normalize(alation_1.generic_api_get(api, official=True))
-        tagged_subjects['tag'] = my_tag
-        tag_frames.append(tagged_subjects)
-        log_me(tagged_subjects.shape)
-    tag_frames_df = pd.concat(tag_frames)
-    tag_frames_df['id'] = tag_frames_df['subject.id'].apply(int)
-    # tag_frames_df_agg = tag_frames_df.groupby(['subject.otype', 'subject.id']).agg(tags=('tag', 'str.cat'))
-    for n, rest in tag_frames_df.groupby(['subject.otype', 'subject.id']):
-        log_me(f'{n}:{";".join(rest.tag)}')
-        objs_with_tag.loc[n, 'tags'] = ";".join(rest.tag)
-    objs_with_tag = objs_with_tag.loc[(objs_with_tag.bi_server_id==str(bi_server_id)) &
-                                      (objs_with_tag.tags.notnull()), ['tags']
-    ]
-
+    # --- load file created by bulk utility
+    df = pd.read_excel("/Users/matthias.funke/Downloads/ratatouille-52K9/use_this_for_upload_52K9.xlsx")
+    # discard anything without tags
+    df = df.loc[df.tags.notnull()]
+    # look up external ID
+    df['external_id'] = df.apply(alation_1.look_up_ext_id, axis=1, bi_server_id=bi_server_id)
+    # rename ID to Old ID
+    df.rename(columns=dict(old_id="id"), inplace=True)
+    # look up new ID on new server
+    df['id'] = df.apply(alation_1.look_up_new_id, axis=1, bi_server_id=bi_server_new)
+    # save sheet...
+    df.to_excel("/Users/matthias.funke/Downloads/experiment.xlsx", index=False)
     #bi_server = alation_1.create_bi_server("http://alation.com", f"V. BI {datetime.now(timezone.utc).isoformat()}")
     #bi_server_id = bi_server.get("Server IDs")[0]
 
     # --- prepare existing download to be more end-user friendly
-    df = get_bi_source(alation_1, bi_server_id)
-    df = df.merge(objs_with_tag, left_index=True, right_index=True, how='left').reset_index()
+    # df = get_bi_source(alation_1, bi_server_id)
     # df.to_excel("bento/source_1.xlsx")
     #df = make_human_readable(df)
     #df.to_excel("/Users/matthias.funke/Downloads/bento/human_readable_159.xlsx", index=False)
@@ -226,16 +197,16 @@ if __name__ == "__main__":
     #alation_1.sync_bi(bi_server_id, df)
 
     # Take care of the logical metadata
-    validated = alation_1.validate_headers(df.columns)
-    pre_validated_df = df.loc[:, list(validated)+['tags']]
-    pre_validated_df['relevant'] = pre_validated_df.apply(lambda x: x.notna().any(), axis=1)
+    # validated = alation_1.validate_headers(df.columns)
+    # pre_validated_df = df.loc[:, list(validated)+['tags']]
+    # pre_validated_df['relevant'] = pre_validated_df.apply(lambda x: x.notna().any(), axis=1)
+    #
+    # final_cols = ['otype', 'id', 'external_id', 'tags'] + list(validated)
+    #
+    # validated_df = df.loc[pre_validated_df.relevant, final_cols].sort_index()
+    # alation_1.upload_lms(validated_df, validated, bi_server_id)
 
-    final_cols = ['otype', 'id', 'external_id', 'tags'] + list(validated)
-
-    validated_df = df.loc[pre_validated_df.relevant, final_cols].sort_index()
-    alation_1.upload_lms(validated_df, validated, bi_server_id)
-
-    print(f"Check out {alation_1.host}/bi/v2/server/{bi_server_id}/")
+    print(f"Check out {alation_1.host}/bi/v2/server/{bi_server_new}/")
 
 
 
