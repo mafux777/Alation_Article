@@ -17,13 +17,15 @@ if __name__ == "__main__":
                                 config.args['user_id'],
                                 )
 
+    my_art = alation_1.find_article_by_title("Charles De Gaulle (CDG)", 44)
+    alation_1.modify_single_field_on_article(my_art, 44, 'My Rich Text', 'CDG is the biggest airport in Paris')
     # cols = ['External Object ID', 'Rule ID', 'Compliant records',
     #        'Non-Compliant Records', 'Total Records', 'Compliance %',
     #        'DQ rule owner', 'Rule description', 'Template', 'Article',
     #        'Table Reference', 'Column Reference']
 
     # df = pd.read_excel("./sampledata/quinoa.xlsx")
-    test_table = 813
+    test_table = 897
     table = alation_1.get_fully_qualified_name("table", test_table)
     policy_template_id = 54
     policy_group_id = 4
@@ -34,7 +36,7 @@ if __name__ == "__main__":
     syllables = ['ka', 'di', 'ra', 'po', 'song', 'tung', 'ly', 'do', 'tip', 'ly', 'ding', 'dread']
     verb = ['needs to be', 'cannot be', 'has to always', 'should never', 'exceeds', 'occasionally mismatches']
     qual = ['GOOD', 'WARNING', 'ALERT']
-    for i in range(100):
+    for i in range(3):
         x = random.randrange(100)
         u = str(uuid.uuid4())[0:8]
         my_test_rule = {
@@ -93,6 +95,11 @@ if __name__ == "__main__":
     renaming_values_df['url'] = logical_metadata_for_policies.id.apply(lambda id: f"/policy/{id}/")
     payload['values'] = list(renaming_values_df.apply(lambda x: dict(x), axis=1))
 
+    # post for the first time
+    alation_1.post_data_health(payload)
+
+    # post for the second time
+    del payload['fields']
     alation_1.post_data_health(payload)
 
     print(f"Check out {alation_1.host}/table/{test_table}/health")
