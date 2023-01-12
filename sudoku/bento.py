@@ -45,20 +45,15 @@ def to_int(n):
 # will be run as that user
 class AlationInstance():
     # The __init__ method is the constructor used for instantiating
-    # email: the up to 30 chars user name, often the email, but for long emails could be cut off
-    # password: could be the LDAP password, as well
     # verify: Requests verifies SSL certificates for HTTPS requests, just like a web browser.
     # By default, SSL verification is enabled, and Requests will throw a SSLError if it’s unable to verify the certificate
-    def __init__(self, host, account, password, refresh_token, user_id,verify=True):
+    def __init__(self, host, refresh_token, user_id, verify=True):
         self.host = host
         self.verify = verify
-        self.account = account
         self.refresh_token = refresh_token
         self.user_id = user_id
-        self.password = password
         self.token = self.get_token()
         self.headers = dict(token=self.token)
-        # self.headers = self.login(account, password)
         self.api_columns = ['otype', 'id']
         self.external_id = {}
         self.bi_folders = None
@@ -74,44 +69,6 @@ class AlationInstance():
         # self.articles = pd.DataFrame() # cache for Articles
         # if self.ds.shape[0]:
         #     log_me(self.ds.loc[ : , ['id', 'title']].head(10))
-
-    # The login method is used to obtain a session ID and relevant cookies
-    # They are cached in the headers variable
-    # account: the up to 30 chars user name, often the email, but for long emails could be cut off
-    # password: could be the LDAP password, as well
-    def login(self, account, password):
-        URL = self.host + '/login/'
-
-        s = requests.Session()
-        s.get(URL, verify=self.verify)
-
-        # get the cookie token
-        csrftoken = s.cookies.get('csrftoken')
-
-        # login with user name and password (and token)
-        # payload = {"csrfmiddlewaretoken": csrftoken, "ldap_user": account, "password": password}
-        # headers = {"Referer": URL}
-        # log_me("Logging in to {}".format(URL))
-        # r = s.post(URL, data=payload, verify=self.verify, headers=headers)
-        payload = {"csrfmiddlewaretoken": csrftoken,
-                   "ldap_user": account,
-                   "password": password}
-        headers = {"Referer": URL}
-        headers['content-type'] = 'application/x-www-form-urlencoded'
-        print("Logging in to {}".format(URL))
-        params = dict(next=None)
-
-        r = s.post(URL, data=payload, verify=self.verify, headers=headers, params=params)
-        # get the session ID and store it for all future API calls
-        sessionid = s.cookies.get('sessionid')
-        if not sessionid:
-            log_me('No session ID, probably wrong user name / password')
-        headers = {"X-CSRFToken": csrftoken,
-                   "Cookie": f"csrftoken={csrftoken}; sessionid={sessionid}",
-                   "Referer": URL
-                   }
-
-        return headers
 
     # The get_custom_fields method returns a pandas DataFrame with all custom fields
     # The Alation ID will also be the ID of the DataFrame
@@ -1317,7 +1274,7 @@ class AlationInstance():
 
     # The generic_api_get implements a REST get, with API token if official or Cookie if not.
     # If the callers sends header, it needs to contain API or cookie
-    def generic_api_get(self, api, headers=None, params=None, official=False):
+    def generic_api_get(self, api, headers=None, params=None, official=True):
         if headers:
             # caller has supplied the headers
             headers_final = headers
