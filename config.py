@@ -1,17 +1,10 @@
+args = {
+    'ds_id': 37,
+    'template_id': 61, # to post results to articles
+    'policy_template_id' : 60,
+    'policy_group_id' : 1,
+    'user_id': 25,
+    'refresh_token': 'EagG_Bwa3_pBvMTg8yiSdkr1Aq9P-PA4UNrqLAD_VL3UBnmvlT709KUfAOb_KC3qgQLWAo4fD3_jWHllZLQlyw',
+    'host': 'https://ga-sandbox.alationproserv.com',
+}
 
-args = {}
-
-args['username'] = 'matthias.funke@alation.com'
-args['password'] = 'm9kBYH;i7cQ;C'
-args['host'] = 'http://localhost:8000'
-args['username2'] = 'matthias.funke@alation.com'
-args['password2'] = 'm9kBYH;i7cQ;C'
-args['host2'] = 'http://localhost:8000'
-args['delete'] = False
-
-first_abok_article = 1889
-
-base_path = ''
-desired_template = "Aviation Glossary"
-desired_ds = "Alation Analytics"
-pickle_file = "ABOK.gzip"

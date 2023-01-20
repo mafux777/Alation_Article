@@ -2,11 +2,8 @@ from sudoku.bento import AlationInstance
 from sudoku.alationutil import log_me
 import config
 import pandas as pd
-from datetime import datetime, timezone
 import hashlib
 import json
-from urllib.parse import quote
-import requests
 
 def get_bi_source(alation_1, bi_server):
     # Get a list of all BI folders
@@ -91,7 +88,7 @@ def make_human_readable(df):
     df['report']=""
     return df
 
-def create_df_with_external_ids(df):
+def create_df_with_external_ids(df, bi_server_id):
     """
     Uses the "parent" column to create external IDs by using hash function
     :param df:
@@ -163,9 +160,6 @@ if __name__ == "__main__":
                                 )
 
     my_templates = alation_1.get_templates()
-    # print(my_templates.title)
-
-    # piece about OCF ds
 
     # piece about Terms
     term_api = "/integration/v2/term/"
@@ -186,6 +180,7 @@ if __name__ == "__main__":
     search_param = json.dumps({"otypes": ["glossary_v3"]}, separators=(',', ':'))
     search_result = alation_1.generic_api_get('/integration/v1/search/',
                                               params=dict(filters=search_param))
+    # create a mapping dict: id->title
     my_glossaries = dict()
     for g in search_result.get("results"):
         my_glossaries[int(g.get('id'))] = g.get('title')
@@ -200,14 +195,14 @@ if __name__ == "__main__":
         template = my_templates.at[t.template_id, 'title']
         print(f"{id:4} | {title:40} | {custom_info_formatted:40} | {glossary_id} | {template}")
 
-    # Alternative
+    # Alternative to get a ready-made dataframe
     my_terms_df['otype'] = 'glossary_term'
     my_terms_df = my_terms_df.set_index(['otype', 'id'])
     cfv = alation_1.get_custom_field_values_for_oids(my_terms_df.index)
 
 
     alation_2 = AlationInstance("https://beta-sandbox.alationproserv.com/",
-                                refresh_token="sempbnpV6bHIJWUiifmfHtLvqOM5IJjrTZCR_SyPtDxv7_h8NB6jh60hS7ido_LqpAYf21Ml7qk_uRkJ5hG6JA",
+                                refresh_token="pfSSglN-auqzQw2fWOgAqi6XqTjQdqVrVGRILah3g8VGsNCAvm5yEQ-Bm1yntFq3-SbvdPuro0KDwTFSWSIU2g",
                                 user_id=9,
                                 verify=True
                                 )

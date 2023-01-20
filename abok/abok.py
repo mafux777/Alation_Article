@@ -8,7 +8,7 @@
 #********************************************************************************************************
 
 import re
-import pdfkit
+# import pdfkit
 from sudoku.alationutil import *
 import os
 from pathlib import Path

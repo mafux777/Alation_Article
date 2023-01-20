@@ -3,8 +3,8 @@ import json
 import random
 
 # Prepare the REST API call parameters
-host = "http://18.218.6.215"
-headers = dict(token='fe12fcf1-3c85-42f2-a39d-800bd8536d51')
+host = "https://beta-sandbox.alationproserv.com"
+headers = dict(token='gNvDvXODxryOu9OORqG1udVBkOIItMoys-tiVIQ01f8')
 
 # Create a data source
 url = host + "/integration/v1/datasource/"

@@ -3,6 +3,34 @@
 The code in this repository started off as sample code for migrating articles, queries and API resources from one instance of Alation
 to another. We then added some other samples of code. 
 
+|File   |Description  |
+|---|---|
+|notebook (dir)  |Notebooks used for demonstrating new APIs. Best consumed after watching the corresponding video on Community   | 
+|Dockerfile   |A minimum dockerfile for creating a python environment. Not needed for any of the files in this repo.   |
+|NoSQL.py   |Creates a new NoSQL virtual Data Source using sample data   |   |   |   |
+|api_resource.py|Creates a sample API Data Source. Uses a weather API example. Note how it also populates title and description.||||
+|bento_box.py|Main script to demo how to use the AlationInstance object.||||
+|bento_box_training.py|Ditto, as demonstrated in Community Session Jan. 2023||||
+|bi_server.py|Creates a sample BI virtual Data Source using sample data||||
+|config.py|Sample configuration file. Uses "args" notation to easily convert to using an arg parser for the command line.||||
+|create_datasource.py|Uses Data Source API to create a datasource. Note this is the native data source, as opposed to OCF.||||
+|create_groups.py|Uses unofficial API to assign users to custom groups||||
+|create_groups_simple.py|Ditto, but uses official API token for unofficial API, making auth easier||||
+|dataflow.py|Creates a sample virtual data source with 3 tables, then adds column-to-column lineage||||
+|dummy.py|Ditto, but with a file object at the start of the lineage and a BI object at the end.||||
+|frb.py|REMOVE? An example of a more complex script that uses an excel input file to migrate some table references in articles. Not documented very well.||||
+|homepage.py|A script that consumes a CSV for input, adding all items to a simple custom homepage. Since there can now be several homepages, this may need to be modified a bit to work.||||
+|lineage_analyzer.py|Identifies tables that have lineage. Uses a combination of search API and dataflow API.||||
+|lineage_from_xml.py|More complex: consumes an XML file with lineage info as input and creates appropriate dataflow objects. Does some rudimentary, recursive, SQL parsing.||||
+|p2v.py|Uses relational APIs (v2) to make a virtual copy of a physical (non-virtual) data source.||||
+|requirements.txt|Sample file to show how to install python dependencies for this repo||||
+|test_api_rights.py|Tests a list of APIs using different user types.||||
+|upload_dtv.py|Uses unofficial APIs to consume a CSV file as input and create an article for each row, creating custom picker fields to reflect the values uses in the input file.||||
+|virtual53.py|Variation on dataflow.py, using CSVs as input||||
+|workday.py|Variation on dataflow.py, using CSVs as input||||
+|creme brulee|Converts the output of an OCF connector MDE run in a special mode. Not for general use.||||
+
+
 ## abok
 Files related to the "Alation Book of Knowledge". Should be used to see how to create a PDF. The abok_loader is no longer actively maintained.
 

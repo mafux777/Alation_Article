@@ -5,9 +5,9 @@ from time import sleep
 from datetime import datetime, timezone
 
 # -- ADJUST THE FOLLOWING CONFIG PARAMS
-url = "http://localhost:8000"
-headers = dict(token='b-b14fUqvc7FhxQq4uIWXUpGiL0fafJbJgBVAJWH7Rw')
-filename = "/Users/matthias.funke/Downloads/ctm_json.json"
+url = "https://funkmeister.alationproserv.com/"
+headers = dict(token='rUkC-Si-lI9E6ua5bWfrhY1WSS0N8dEx7GI_RxF-PTc')
+filename = "./sampledata/ctm_json.json"
 folder='root.bq' # should contain 1 dot
 collection=f'CTM-v4' # should not contain any dots
 # -- THAT WAS IT
@@ -79,6 +79,7 @@ r = requests.post(url=url_1, headers=headers, json=params, verify=False)
 status = (json.loads(r.content))
 print(status)
 ds_id = status['id']
+# ds_id = 13
 print(f"Created data source: {url}/data/{ds_id}/")
 api = f"/integration/v1/data/{ds_id}/parse_docstore/"
 
@@ -113,16 +114,21 @@ while(True):
     sleep(2)
 
 # take care of logical metadata
-body=[]
-data=""
-for k, v in logical_metadata.items():
-    d=dict(key=f"{ds_id}.{k}", title=v.get('title'),description=v['description'])
-    body.append(d)
-    data=data+json.dumps(d)+"\n"
+my_len = len(logical_metadata.items())
+my_size = my_len//5
+for n in range(6):
+    body = []
+    data = ""
+    start = n*my_size
+    stop = ((n+1)*my_size)
+    for k, v in list(logical_metadata.items())[start:stop]:
+        d=dict(key=f"{ds_id}.{k}", title=v.get('title'),description=v['description'])
+        body.append(d)
+        data=data+json.dumps(d)+"\n"
 
-log_me("Uploading logical metadata for NoSQL")
-r2 = requests.post(f'{url}/api/v1/bulk_metadata/custom_fields/default/doc_schema', data=data, headers=headers)
-log_me(r2.content)
+    log_me("Uploading logical metadata for NoSQL")
+    r2 = requests.post(f'{url}/api/v1/bulk_metadata/custom_fields/default/doc_schema', data=data, headers=headers)
+    log_me(r2.content)
 
 print("ALL DONE")
 

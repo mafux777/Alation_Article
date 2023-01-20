@@ -4,14 +4,15 @@ import random
 from datetime import datetime, timezone
 
 # Prepare the REST API call parameters
-host = "https://2021-2-sandbox.alationproserv.com"
-headers = dict(token='KA6j4CYE4hmuEuhiknepcdowCPDnUD4-4_95s7wB2Lw')
+host = "http://2022-1-sandbox.alationproserv.com"
+headers = dict(token='juxBQUUiHOp7nXz-Hweh5fXkXcUIIynFhaCopxw-tLE')
 
 # Create a data source
 url = host + "/integration/v1/datasource/"
 
 # Create a random title
 random = ''.join(random.sample("ABCDEFGHJKLMNPQRSTUVWXYZ0123456789", 4))
+print(f"Random file key: {random}")
 
 # Parameters for creating the data source
 params=dict(dbtype="postgresql", title=f"My API DS {random}", is_virtual=True, deployment_setup_complete=True)
@@ -23,8 +24,8 @@ status = r.json()
 ds_id = status['id']
 print(f"Created data source: {host}/data/{ds_id}/")
 
-with open("nifi.json") as f:
-    j = json.load(f)
+#with open("nifi.json") as f:
+#    j = json.load(f)
 
 # --- Prepare sample data for the virtual data source
 sample_data = [
@@ -61,7 +62,8 @@ while(True):
 # We don't have an API for creating a file system, please do this beforehand and note down the ID
 id=1
 file_api = f"{host}/api/v1/bulk_metadata/file_upload/{id}/"
-bucket = j['processors'][1]['component']['config']['properties']['Bucket']
+# bucket = j['processors'][1]['component']['config']['properties']['Bucket']
+bucket = "s3-test-bucket"
 files = [
             dict(path=f"/",
                  name=f"{bucket}",
@@ -113,8 +115,8 @@ body = {
             # The DataFlow
             [{"otype": "dataflow", "key": f"api/visualize_{ds_id}"}],
             # Outputs
-            [{"otype": "bi_report", "key": "3.bi_report.ZTLQ3Theta Token"},
-             {"otype": "bi_report", "key": "3.bi_report.ZTLQ3Uniswap"},
+            [{"otype": "bi_report", "key": "1.bi_report.LFRJ1Theta Token"},
+             {"otype": "bi_report", "key": "1.bi_report.LFRJ1Uniswap"},
             ],
         ],
     ]

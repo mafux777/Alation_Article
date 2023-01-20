@@ -1,9 +1,9 @@
-from AlationInstance import AlationInstance
-from Article import Article
-from alationutil import log_me, extract_files
+from sudoku.AlationInstance import AlationInstance
+from sudoku.Article import Article
+from sudoku.alationutil import log_me, extract_files
 import config
 import pickle
-from query import generate_html
+# from query import generate_html
 from openpyxl.utils.dataframe import dataframe_to_rows
 from openpyxl import Workbook
 from openpyxl.styles import Font, Fill, Alignment
